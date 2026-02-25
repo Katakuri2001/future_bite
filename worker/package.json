@@ -1,0 +1,16 @@
+{
+  "name": "futuristic-restaurant-worker",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler publish"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.0",
+    "qrcode": "^1.5.1",
+    "uuid": "^9.0.0",
+    "bwip-js": "^2.0.10"
+  }
+}

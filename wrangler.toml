@@ -1,0 +1,62 @@
+# Wrangler configuration template for Futuristic Restaurant
+# Replace placeholders (YOUR_ACCOUNT_ID, YOUR_D1_DB_NAME, etc.) with your real values.
+
+name = "futuristic-restaurant-worker"
+main = "worker/src/index.js"
+compatibility_date = "2026-02-25"
+type = "javascript"
+account_id = "8252cf6c69af40c8a8f7af991964d215"
+workers_dev = true
+# route = ""      # uncomment and set for custom domain deployments
+# zone_id = ""    # set when using a custom domain
+
+[vars]
+# Do NOT place real secrets here in source control. Use `wrangler secret put`.
+JWT_SECRET = "JWT_SECRET_PLACEHOLDER"
+
+[d1_databases]
+# Binding name on the Worker -> local variable name in `worker/src/index.js`
+DB = { binding = "DB", database_name = "ab2ed349-3d06-45d6-90f6-a6cb77bfb46a" }
+
+[r2_buckets]
+# R2 binding: ASSETS -> available as R2_BUCKETS.ASSETS in Worker
+ASSETS = { binding = "ASSETS", bucket_name = "your_assets_bucket" }
+
+[durable_objects]
+# Example Durable Object to coordinate WebSockets / order processing
+ORDER_DO = { class_name = "OrderDO", binding = "ORDER_DO" }
+
+[kv_namespaces]
+MY_KV = { binding = "MY_KV", id = "" }
+
+[env.dev]
+name = "futuristic-restaurant-worker-dev"
+account_id = "8252cf6c69af40c8a8f7af991964d215"
+workers_dev = true
+[env.dev.vars]
+JWT_SECRET = "JWT_SECRET_PLACEHOLDER"
+[env.dev.d1_databases]
+DB = { binding = "DB", database_name = "ab2ed349-3d06-45d6-90f6-a6cb77bfb46a" }
+[env.dev.r2_buckets]
+ASSETS = { binding = "ASSETS", bucket_name = "your_assets_bucket" }
+[env.dev.durable_objects]
+ORDER_DO = { class_name = "OrderDO", binding = "ORDER_DO" }
+[env.dev.kv_namespaces]
+MY_KV = { binding = "MY_KV", id = "" }
+
+[env.prod]
+name = "futuristic-restaurant-worker"
+account_id = "8252cf6c69af40c8a8f7af991964d215"
+workers_dev = false
+# route = "https://yourdomain.com/*"
+# zone_id = "YOUR_ZONE_ID"
+[env.prod.vars]
+JWT_SECRET = "JWT_SECRET_PLACEHOLDER"
+[env.prod.d1_databases]
+DB = { binding = "DB", database_name = "ab2ed349-3d06-45d6-90f6-a6cb77bfb46a" }
+[env.prod.r2_buckets]
+ASSETS = { binding = "ASSETS", bucket_name = "your_assets_bucket" }
+[env.prod.durable_objects]
+ORDER_DO = { class_name = "OrderDO", binding = "ORDER_DO" }
+[env.prod.kv_namespaces]
+MY_KV = { binding = "MY_KV", id = "" }

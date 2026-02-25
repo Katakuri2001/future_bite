@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom theme overrides */
+:root {
+  --bg: #0b0f16;
+  --panel: rgba(255,255,255,0.04);
+  --neon: #00f0ff;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background-color: #0b0f16;
+  color: #ffffff;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
+
+.glass {
+  background: linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02));
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.neon {
+  text-shadow: 0 0 8px rgba(0,240,255,0.12), 0 0 24px rgba(0,240,255,0.06);
+  color: var(--neon);
+}
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+/* Utility for subtle transitions */
+.smooth { transition: all 220ms cubic-bezier(.2,.9,.3,1); }
+
+.card {
+  padding: 1rem;
+  border-radius: 0.5rem;
+  background: linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02));
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+

@@ -1,0 +1,15 @@
+name = "futuristic-restaurant-worker"
+main = "./worker/dist/index.js"
+compatibility_date = "2026-02-23"
+
+[vars]
+JWT_SECRET = "replace_with_strong_secret"
+D1_DATABASE = ""
+
+[build]
+command = "npm install && npm run build"
+
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "your-r2-bucket"
+preview = true
