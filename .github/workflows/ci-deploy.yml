@@ -1,0 +1,59 @@
+name: CI & Deploy
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Build frontend
+        working-directory: frontend/web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Upload frontend assets to R2
+        if: always()
+        env:
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          echo "Uploading frontend assets to R2 bucket: ${R2_BUCKET}"
+          npm i -g @cloudflare/wrangler@^2 || true
+          # iterate files and upload. wrangler r2 object put <bucket> <key> <file>
+          shopt -s globstar || true
+          FILES=$(find frontend/web/dist -type f || true)
+          for f in $FILES; do
+            key=${f#frontend/web/dist/}
+            echo "Uploading $f -> $key"
+            npx wrangler r2 object put "${R2_BUCKET}" "$key" "$f" || echo "failed $f"
+          done
+
+      - name: Install Worker deps (optional)
+        working-directory: worker
+        run: |
+          npm ci || true
+
+      - name: Publish Worker (wrangler)
+        uses: cloudflare/wrangler-action@v1
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          workingDirectory: worker
+          args: publish --env prod
+
+      - name: Notify (log)
+        run: echo "Worker published (check Cloudflare dashboard)."
+
+# Notes:
+# - Set `CF_API_TOKEN` in the repository secrets (Repository Settings → Secrets → Actions).
+# - You can also set additional secrets used by the Worker (JWT_SECRET, R2 credentials) via Secrets.
+# - If you want assets uploaded to R2, add a step here that uses `wrangler r2` or `aws s3` compatible upload.
