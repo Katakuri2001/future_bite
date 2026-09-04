@@ -23,4 +23,5 @@ worker/dist/
 
 .data/
 .vercel
+.netlify
 .env*

@@ -59,7 +59,10 @@ export interface MockDB {
 const DATA_DIR = path.join(process.cwd(), ".data");
 const DB_PATH = path.join(DATA_DIR, "db.json");
 
-const inMemoryOnly = Boolean(process.env.VERCEL);
+const inMemoryOnly =
+  Boolean(process.env.VERCEL) ||
+  Boolean(process.env.NETLIFY) ||
+  Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
 let memoryDB: MockDB | null = null;
 
 const seedUsers: MockUser[] = [
