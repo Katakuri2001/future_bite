@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-let staff = [
+const staff = [
   { id: "staff-1", name: "Alex Kim", email: "alex@futurebite.com", role: "admin", phone: "+95 9 100 100 100", isActive: true, shift: "All Day" },
   { id: "staff-2", name: "Chef Nakamura", email: "chef.nakamura@futurebite.com", role: "kitchen", phone: "+95 9 200 200 200", isActive: true, shift: "Evening" },
   { id: "staff-3", name: "Maya Thompson", email: "maya@futurebite.com", role: "manager", phone: "+95 9 300 300 300", isActive: true, shift: "Evening" },

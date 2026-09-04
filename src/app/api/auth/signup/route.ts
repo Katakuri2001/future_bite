@@ -4,22 +4,9 @@ import { randomUUID } from "crypto";
 // In-memory "database" for mock API
 const users: Record<string, any> = {};
 const sessions: Record<string, any> = {};
-const reservations: Record<string, any> = {};
-const orders: Record<string, any> = {};
 
 function generateToken(): string {
   return randomUUID().replace(/-/g, "");
-}
-
-function getAuthUser(request: NextRequest): { user: any; token: string } | null {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
-  const token = authHeader.slice(7);
-  const session = sessions[token];
-  if (!session) return null;
-  const user = users[session.userId];
-  if (!user) return null;
-  return { user, token };
 }
 
 export async function POST(request: NextRequest) {

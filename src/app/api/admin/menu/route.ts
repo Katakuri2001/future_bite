@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-let menuItems: Record<string, any> = {
+const menuItems: Record<string, any> = {
   "dish-001": { id: "dish-001", name: "Nebula Tartare", price: 2800, category: "Starters", isAvailable: true, isFeatured: true },
   "dish-002": { id: "dish-002", name: "Quantum Lobster Bisque", price: 2400, category: "Starters", isAvailable: true, isFeatured: false },
   "dish-003": { id: "dish-003", name: "Wagyu A5 Omakase", price: 6800, category: "Mains", isAvailable: true, isFeatured: true },

@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Image from "next/image";
 import { useScrollInView } from "./MotionSection";
 import { useReducedMotion } from "@/lib/hooks/useReducedMotion";
 
@@ -22,8 +23,8 @@ export default function RevealImage({
 
   if (reducedMotion) {
     return (
-      <div className={className}>
-        <img src={src} alt={alt} loading="lazy" />
+      <div className={`relative ${className || ""}`}>
+        <Image src={src} alt={alt} fill sizes="100vw" className="object-cover" loading="lazy" />
       </div>
     );
   }
@@ -34,10 +35,10 @@ export default function RevealImage({
       initial={{ opacity: 0, scale: 1.08 }}
       animate={controls}
       transition={{ delay, duration: 1, ease: "easeOut" }}
-      className={className}
+      className={`relative ${className || ""}`}
       style={{ overflow: "hidden" }}
     >
-      <img src={src} alt={alt} loading="lazy" />
+      <Image src={src} alt={alt} fill sizes="100vw" className="object-cover" loading="lazy" />
     </motion.div>
   );
 }

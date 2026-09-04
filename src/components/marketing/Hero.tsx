@@ -5,7 +5,6 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { OptimizedImage } from "@/components/motion/OptimizedImage";
 
 gsap.registerPlugin(ScrollTrigger);
 

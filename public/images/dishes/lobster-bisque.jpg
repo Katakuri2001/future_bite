@@ -1,5 +1,0 @@
-<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/SVG11.dtd">
-<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
-  <rect width="800" height="600" fill="#151515"/>
-  <text x="400" y="300" text-anchor="middle" fill="#C9A96E" font-size="20" font-family="Georgia">Dish Image</text>
-</svg>

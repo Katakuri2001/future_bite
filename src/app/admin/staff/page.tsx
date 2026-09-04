@@ -1,9 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import AdminLayout from "@/components/admin/AdminLayout";
 import { cn } from "@/lib/utils";
-import { staffMembers } from "@/lib/data";
 import { Plus } from "lucide-react";
+import type { StaffMember } from "@/lib/types";
 
 const roleColors: Record<string, string> = {
   admin: "bg-gold/20 text-gold",
@@ -14,6 +15,17 @@ const roleColors: Record<string, string> = {
 };
 
 export default function AdminStaffPage() {
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+
+  useEffect(() => {
+    fetch("/api/admin/staff")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) setStaff(data.data);
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <AdminLayout>
       <div>
@@ -26,22 +38,14 @@ export default function AdminStaffPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {staffMembers.map((member) => (
-            <div
-              key={member.id}
-              className="bg-surface border border-border/50 p-5"
-            >
+          {staff.map((member) => (
+            <div key={member.id} className="bg-surface border border-border/50 p-5">
               <div className="flex items-start justify-between mb-3">
                 <div>
                   <p className="text-ivory text-sm font-medium">{member.name}</p>
                   <p className="text-ivory-dim text-xs">{member.email}</p>
                 </div>
-                <span
-                  className={cn(
-                    "text-[10px] uppercase tracking-wider px-2 py-1",
-                    roleColors[member.role]
-                  )}
-                >
+                <span className={cn("text-[10px] uppercase tracking-wider px-2 py-1", roleColors[member.role])}>
                   {member.role}
                 </span>
               </div>

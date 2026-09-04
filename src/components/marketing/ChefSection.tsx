@@ -28,7 +28,7 @@ export default function ChefSection() {
           >
             <div className="aspect-[3/4] overflow-hidden bg-surface">
               <OptimizedImage
-                src="https://images.unsplash.com/photo-1577219491135-ce398739595b?w=800&q=80"
+                src="https://images.unsplash.com/photo-1583394293214-28ded15ee548?w=800&q=80"
                 alt="Head Chef Kenji Nakamura"
                 className="w-full h-full object-cover"
               />

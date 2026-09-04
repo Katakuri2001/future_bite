@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-let reservations: Record<string, any> = {};
+const reservations: Record<string, any> = {};
 let resCounter = 1;
 
 // Seed initial data

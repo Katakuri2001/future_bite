@@ -11,8 +11,24 @@ import {
 } from "lucide-react";
 import { formatPrice } from "@/lib/utils";
 
+interface PopularDish {
+  name: string;
+  orders: number;
+}
+
+interface AnalyticsStats {
+  todayReservations: number;
+  todayOrders: number;
+  currentCovers: number;
+  kitchenQueue: number;
+  revenue: number;
+  averageOrderValue: number;
+  occupancy: number;
+  popularDishes: PopularDish[];
+}
+
 export default function AdminOverview() {
-  const [stats, setStats] = useState<any>(null);
+  const [stats, setStats] = useState<AnalyticsStats | null>(null);
 
   useEffect(() => {
     fetch("/api/admin/analytics")
@@ -102,7 +118,7 @@ export default function AdminOverview() {
       <div className="bg-surface border border-border/50 p-6">
         <h3 className="text-sm font-medium text-ivory mb-4">Popular Dishes Today</h3>
         <div className="space-y-3">
-          {(data.popularDishes || []).map((dish: any, i: number) => (
+          {(data.popularDishes || []).map((dish: PopularDish, i: number) => (
             <div key={dish.name} className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <span className="text-ivory-dim text-xs w-5">{i + 1}.</span>

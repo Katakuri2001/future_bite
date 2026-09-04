@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 
-let orders: Record<string, any> = {};
+const orders: Record<string, any> = {};
 let orderCounter = 1000;
 
 function calculateOrderTotals(items: any[]) {

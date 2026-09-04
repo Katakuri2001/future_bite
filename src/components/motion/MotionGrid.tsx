@@ -1,10 +1,8 @@
 "use client";
 
-import { useRef } from "react";
-import { motion, useAnimation, Variants } from "framer-motion";
+import { motion } from "framer-motion";
 import { useScrollInView } from "./MotionSection";
 import { useReducedMotion } from "@/lib/hooks/useReducedMotion";
-import { staggerContainer as baseStagger } from "@/lib/motion/variants";
 
 interface MotionGridProps {
   children: React.ReactNode;

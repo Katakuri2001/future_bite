@@ -17,7 +17,7 @@ export default function AdminLayout({
     if (!token) {
       router.push("/login");
     } else {
-      setAuthorized(true);
+      queueMicrotask(() => setAuthorized(true));
     }
   }, [router]);
 

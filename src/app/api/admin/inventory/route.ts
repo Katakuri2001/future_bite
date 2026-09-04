@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
-let inventory = [
+const inventory = [
   { id: "inv-1", name: "Wagyu Beef A5", unit: "kg", currentStock: 4.5, minimumStock: 2, cost: 180, supplier: "Premium Meats Co.", status: "healthy" as const },
   { id: "inv-2", name: "Black Winter Truffle", unit: "g", currentStock: 120, minimumStock: 50, cost: 8.5, supplier: "Truffle House", status: "healthy" as const },
   { id: "inv-3", name: "Maine Lobster", unit: "pcs", currentStock: 8, minimumStock: 5, cost: 45, supplier: "Ocean Fresh", status: "low" as const },
