@@ -3,6 +3,9 @@ import Navigation from "@/components/marketing/Navigation";
 import Footer from "@/components/marketing/Footer";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+import { OptimizedImage } from "@/components/motion/OptimizedImage";
+import MotionProvider from "@/components/motion/MotionProvider";
+import { FadeIn } from "@/components/motion";
 
 export const metadata: Metadata = {
   title: "Experience",
@@ -12,30 +15,30 @@ export const metadata: Metadata = {
 
 export default function ExperiencePage() {
   return (
-    <>
+    <MotionProvider>
       <Navigation />
-      <main className="min-h-screen pt-20">
-        <section className="section-padding !pt-20">
-          <div className="container-narrow mx-auto text-center mb-16">
-            <p className="text-label mb-4">The Experience</p>
-            <h1 className="text-display-lg text-ivory mb-6">
-              More Than a Meal
-            </h1>
-            <p className="text-body-lg max-w-2xl mx-auto">
-              Every detail is designed to be remembered. From the moment you
-              arrive to the final farewell, your evening is crafted around you.
-            </p>
-          </div>
+      <FadeIn>
+        <main className="min-h-screen pt-20">
+          <section className="section-padding !pt-20">
+            <div className="container-narrow mx-auto text-center mb-16">
+              <p className="text-label mb-4">The Experience</p>
+              <h1 className="text-display-lg text-ivory mb-6">
+                More Than a Meal
+              </h1>
+              <p className="text-body-lg max-w-2xl mx-auto">
+                Every detail is designed to be remembered. From the moment you
+                arrive to the final farewell, your evening is crafted around you.
+              </p>
+            </div>
+          </section>
 
           <div className="container-wide mx-auto space-y-20">
-            {/* Window Tables */}
             <div id="window" className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
               <div className="aspect-[4/3] overflow-hidden bg-surface">
-                <img
+                <OptimizedImage
                   src="https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80"
                   alt="Window dining experience"
                   className="w-full h-full object-cover"
-                  loading="lazy"
                 />
               </div>
               <div>
@@ -53,7 +56,6 @@ export default function ExperiencePage() {
               </div>
             </div>
 
-            {/* Bar / Chef's Counter */}
             <div id="bar" className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
               <div className="order-2 lg:order-1">
                 <p className="text-label mb-4">Bar / Chef&apos;s Counter</p>
@@ -68,23 +70,20 @@ export default function ExperiencePage() {
                 <p className="text-gold text-sm font-medium">Tables 7-8</p>
               </div>
               <div className="aspect-[4/3] overflow-hidden bg-surface order-1 lg:order-2">
-                <img
+                <OptimizedImage
                   src="https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=800&q=80"
                   alt="Chef's counter experience"
                   className="w-full h-full object-cover"
-                  loading="lazy"
                 />
               </div>
             </div>
 
-            {/* Private Room */}
             <div id="private" className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
               <div className="aspect-[4/3] overflow-hidden bg-surface">
-                <img
+                <OptimizedImage
                   src="https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=800&q=80"
                   alt="Private dining room"
                   className="w-full h-full object-cover"
-                  loading="lazy"
                 />
               </div>
               <div>
@@ -101,28 +100,27 @@ export default function ExperiencePage() {
               </div>
             </div>
           </div>
-        </section>
 
-        {/* CTA */}
-        <section className="section-padding bg-bg-elevated">
-          <div className="container-narrow mx-auto text-center">
-            <h2 className="text-display-md text-ivory mb-6">
-              Choose Your Experience
-            </h2>
-            <p className="text-body-lg max-w-lg mx-auto mb-8">
-              Every table tells a different story. Select yours.
-            </p>
-            <Link href="/reserve" className="btn-primary group">
-              Reserve a Table
-              <ArrowRight
-                size={16}
-                className="transition-transform group-hover:translate-x-1"
-              />
-            </Link>
-          </div>
-        </section>
-      </main>
+          <section className="section-padding bg-bg-elevated">
+            <div className="container-narrow mx-auto text-center">
+              <h2 className="text-display-md text-ivory mb-6">
+                Choose Your Experience
+              </h2>
+              <p className="text-body-lg max-w-lg mx-auto mb-8">
+                Every table tells a different story. Select yours.
+              </p>
+              <Link href="/reserve" className="btn-primary group">
+                Reserve a Table
+                <ArrowRight
+                  size={16}
+                  className="transition-transform group-hover:translate-x-1"
+                />
+              </Link>
+            </div>
+          </section>
+        </main>
+      </FadeIn>
       <Footer />
-    </>
+    </MotionProvider>
   );
 }

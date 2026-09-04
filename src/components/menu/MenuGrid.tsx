@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Search, SlidersHorizontal } from "lucide-react";
 import { cn, formatPrice } from "@/lib/utils";
 import { menuItems, menuCategories } from "@/lib/data";
@@ -74,10 +75,12 @@ export default function MenuGrid() {
             href={`/menu/${item.slug}`}
             className="group bg-surface border border-border/50 hover:border-border-light transition-all duration-500 overflow-hidden"
           >
-            <div className="img-zoom aspect-[4/3] overflow-hidden bg-bg">
-              <img
+            <div className="img-zoom aspect-[4/3] overflow-hidden bg-bg relative">
+              <Image
                 src={item.imageUrl}
                 alt={item.name}
+                fill
+                sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
                 className="w-full h-full object-cover"
                 loading="lazy"
               />

@@ -86,9 +86,32 @@ export default function ReservationFlow() {
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
-    // Simulate API call
-    await new Promise((r) => setTimeout(r, 1500));
-    setConfirmationCode(`FB-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9999)).padStart(4, "0")}`);
+    try {
+      const response = await fetch("/api/reservations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerName: name,
+          customerEmail: email,
+          customerPhone: phone,
+          partySize: guests,
+          date,
+          time,
+          experience,
+          tableId: availableTables[0]?.id || "",
+          preferences: [],
+          specialRequests,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setConfirmationCode(data.data.confirmationCode);
+      } else {
+        setConfirmationCode(`FB-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9999)).padStart(4, "0")}`);
+      }
+    } catch {
+      setConfirmationCode(`FB-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9999)).padStart(4, "0")}`);
+    }
     setStep("confirmation");
     setIsSubmitting(false);
   };

@@ -1,18 +1,38 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import AdminLayout from "@/components/admin/AdminLayout";
 import { cn, formatPrice } from "@/lib/utils";
-import { menuItems, menuCategories } from "@/lib/data";
-import { useState } from "react";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 
+interface AdminMenuItem {
+  id: string;
+  name: string;
+  price: number;
+  category: string;
+  isAvailable: boolean;
+  isFeatured: boolean;
+}
+
 export default function AdminMenuPage() {
+  const [menuItems, setMenuItems] = useState<AdminMenuItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState("all");
+
+  useEffect(() => {
+    fetch("/api/admin/menu")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) setMenuItems(data.data);
+      })
+      .catch(() => {});
+  }, []);
+
+  const categories = [...new Set(menuItems.map((i) => i.category))];
 
   const filtered =
     selectedCategory === "all"
       ? menuItems
-      : menuItems.filter((i) => i.categorySlug === selectedCategory);
+      : menuItems.filter((i) => i.category === selectedCategory);
 
   return (
     <AdminLayout>
@@ -25,7 +45,6 @@ export default function AdminMenuPage() {
           </button>
         </div>
 
-        {/* Category filter */}
         <div className="flex gap-2 mb-6 flex-wrap">
           <button
             onClick={() => setSelectedCategory("all")}
@@ -38,98 +57,56 @@ export default function AdminMenuPage() {
           >
             All
           </button>
-          {menuCategories.map((cat) => (
+          {categories.map((cat) => (
             <button
-              key={cat.slug}
-              onClick={() => setSelectedCategory(cat.slug)}
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
               className={cn(
                 "px-4 py-1.5 text-xs tracking-wider uppercase border transition-all",
-                selectedCategory === cat.slug
+                selectedCategory === cat
                   ? "border-gold text-gold bg-gold/10"
                   : "border-border-light text-ivory-dim hover:border-gold/50"
               )}
             >
-              {cat.name}
+              {cat}
             </button>
           ))}
         </div>
 
-        {/* Table */}
         <div className="bg-surface border border-border/50 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border/50">
-                  <th className="text-left text-[10px] tracking-[0.1em] uppercase text-ivory-dim px-4 py-3">
-                    Dish
-                  </th>
-                  <th className="text-left text-[10px] tracking-[0.1em] uppercase text-ivory-dim px-4 py-3">
-                    Category
-                  </th>
-                  <th className="text-left text-[10px] tracking-[0.1em] uppercase text-ivory-dim px-4 py-3">
-                    Price
-                  </th>
-                  <th className="text-left text-[10px] tracking-[0.1em] uppercase text-ivory-dim px-4 py-3">
-                    Status
-                  </th>
-                  <th className="text-left text-[10px] tracking-[0.1em] uppercase text-ivory-dim px-4 py-3">
-                    Featured
-                  </th>
-                  <th className="text-right text-[10px] tracking-[0.1em] uppercase text-ivory-dim px-4 py-3">
-                    Actions
-                  </th>
+                  <th className="text-left text-[10px] tracking-[0.1em] uppercase text-ivory-dim px-4 py-3">Dish</th>
+                  <th className="text-left text-[10px] tracking-[0.1em] uppercase text-ivory-dim px-4 py-3">Category</th>
+                  <th className="text-left text-[10px] tracking-[0.1em] uppercase text-ivory-dim px-4 py-3">Price</th>
+                  <th className="text-left text-[10px] tracking-[0.1em] uppercase text-ivory-dim px-4 py-3">Status</th>
+                  <th className="text-left text-[10px] tracking-[0.1em] uppercase text-ivory-dim px-4 py-3">Featured</th>
+                  <th className="text-right text-[10px] tracking-[0.1em] uppercase text-ivory-dim px-4 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((item) => (
-                  <tr
-                    key={item.id}
-                    className="border-b border-border/30 hover:bg-surface-elevated transition-colors"
-                  >
+                  <tr key={item.id} className="border-b border-border/30 hover:bg-surface-elevated transition-colors">
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-bg overflow-hidden flex-shrink-0">
-                          <img
-                            src={item.imageUrl}
-                            alt={item.name}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                        <div>
-                          <p className="text-ivory text-sm">{item.name}</p>
-                          <p className="text-ivory-dim text-xs line-clamp-1">
-                            {item.description}
-                          </p>
-                        </div>
-                      </div>
+                      <p className="text-ivory text-sm">{item.name}</p>
                     </td>
                     <td className="px-4 py-3 text-ivory text-sm">{item.category}</td>
-                    <td className="px-4 py-3 text-gold text-sm font-medium">
-                      {formatPrice(item.price)}
-                    </td>
+                    <td className="px-4 py-3 text-gold text-sm font-medium">{formatPrice(item.price)}</td>
                     <td className="px-4 py-3">
-                      <span
-                        className={cn(
-                          "text-[10px] uppercase tracking-wider px-2 py-1 inline-block",
-                          item.isAvailable
-                            ? "bg-success/20 text-success"
-                            : "bg-error/20 text-error"
-                        )}
-                      >
+                      <span className={cn(
+                        "text-[10px] uppercase tracking-wider px-2 py-1 inline-block",
+                        item.isAvailable ? "bg-success/20 text-success" : "bg-error/20 text-error"
+                      )}>
                         {item.isAvailable ? "Available" : "Unavailable"}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-ivory-dim text-sm">
-                      {item.isFeatured ? "★" : "—"}
-                    </td>
+                    <td className="px-4 py-3 text-ivory-dim text-sm">{item.isFeatured ? "★" : "—"}</td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
-                        <button className="text-ivory-dim hover:text-gold transition-colors p-1">
-                          <Pencil size={14} />
-                        </button>
-                        <button className="text-ivory-dim hover:text-error transition-colors p-1">
-                          <Trash2 size={14} />
-                        </button>
+                        <button className="text-ivory-dim hover:text-gold transition-colors p-1"><Pencil size={14} /></button>
+                        <button className="text-ivory-dim hover:text-error transition-colors p-1"><Trash2 size={14} /></button>
                       </div>
                     </td>
                   </tr>

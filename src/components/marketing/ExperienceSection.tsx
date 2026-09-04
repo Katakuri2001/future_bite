@@ -1,4 +1,8 @@
+"use client"
+import { motion } from "framer-motion";
 import { Utensils, Flame, Wine } from "lucide-react";
+import { OptimizedImage } from "@/components/motion/OptimizedImage";
+import { staggerContainer, staggerItem } from "@/lib/motion/variants";
 
 const experiences = [
   {
@@ -31,7 +35,13 @@ export default function ExperienceSection() {
   return (
     <section className="section-padding bg-bg">
       <div className="container-wide mx-auto">
-        <div className="text-center mb-16 md:mb-20">
+        <motion.div
+          initial={{ opacity: 0, y: 40 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.3 }}
+          transition={{ duration: 0.8 }}
+          className="text-center mb-16 md:mb-20"
+        >
           <p className="text-label mb-4">The Experience</p>
           <h2 className="text-display-md text-ivory mb-6">
             More Than a Meal
@@ -39,22 +49,30 @@ export default function ExperienceSection() {
           <p className="text-body-lg max-w-xl mx-auto">
             Every detail is designed to be remembered.
           </p>
-        </div>
+        </motion.div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-6">
+        <motion.div
+          variants={staggerContainer(0.12, 0.15)}
+          initial="hidden"
+          whileInView="show"
+          viewport={{ once: true, amount: 0.2 }}
+          className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-6"
+        >
           {experiences.map((exp) => {
             const Icon = exp.icon;
             return (
-              <article
+              <motion.article
                 key={exp.title}
+                variants={staggerItem()}
+                whileHover={{ scale: 1.03, y: -6 }}
+                transition={{ duration: 0.4 }}
                 className="group cursor-pointer"
               >
                 <div className="img-zoom mb-6 aspect-[4/5] overflow-hidden bg-surface">
-                  <img
+                  <OptimizedImage
                     src={exp.image}
                     alt={exp.title}
                     className="w-full h-full object-cover"
-                    loading="lazy"
                   />
                 </div>
                 <div className="flex items-center gap-3 mb-3">
@@ -63,17 +81,17 @@ export default function ExperienceSection() {
                     className="text-gold"
                     strokeWidth={1.5}
                   />
-                  <h3 className="text-display text-xl text-ivory">
+                  <h3 className="text-display text-xl text-ivory group-hover:text-gold transition-colors duration-300">
                     {exp.title}
                   </h3>
                 </div>
                 <p className="text-ivory-muted text-sm leading-relaxed">
                   {exp.description}
                 </p>
-              </article>
+              </motion.article>
             );
           })}
-        </div>
+        </motion.div>
       </div>
     </section>
   );
