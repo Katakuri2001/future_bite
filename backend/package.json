@@ -1,0 +1,52 @@
+{
+  "name": "futuristic-restaurant-backend",
+  "version": "1.0.0",
+  "description": "Enterprise-grade restaurant ecosystem backend on Cloudflare Workers",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env production",
+    "test": "vitest",
+    "test:watch": "vitest --watch",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint src --ext .ts,.tsx",
+    "lint:fix": "eslint src --ext .ts,.tsx --fix",
+    "type-check": "tsc --noEmit",
+    "db:migrate": "wrangler d1 migrations apply",
+    "db:local": "wrangler d1 migrations apply --local",
+    "db:seed": "node scripts/seed.js"
+  },
+  "dependencies": {
+    "@cloudflare/workers-types": "^4.20231218.0",
+    "@types/bcrypt": "^5.0.2",
+    "bcrypt": "^5.1.1",
+    "hono": "^3.11.7",
+    "jose": "^5.1.3",
+    "zod": "^3.22.4",
+    "nanoid": "^5.0.4",
+    "date-fns": "^3.0.6",
+    "qr-code": "^1.5.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.6",
+    "@typescript-eslint/eslint-plugin": "^6.17.0",
+    "@typescript-eslint/parser": "^6.17.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.1.0",
+    "@vitest/coverage-v8": "^1.1.0",
+    "wrangler": "^3.22.1"
+  },
+  "keywords": [
+    "restaurant",
+    "cloudflare",
+    "workers",
+    "enterprise",
+    "saas",
+    "edge-computing"
+  ],
+  "author": "Enterprise Restaurant Team",
+  "license": "MIT"
+}
