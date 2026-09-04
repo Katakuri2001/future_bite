@@ -25,7 +25,7 @@ function resolveSiteUrl(): string {
 }
 
 export const metadata: Metadata = {
-  metadataBase: new URL(resolveSiteUrl()),
+metadataBase: new URL(resolveSiteUrl()),
   title: {
     default: "FutureBite — Dining, Reimagined.",
     template: "%s | FutureBite",
