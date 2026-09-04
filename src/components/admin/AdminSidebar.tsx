@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   CalendarDays,
@@ -32,6 +33,13 @@ const navItems = [
 
 export default function AdminSidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleSignOut = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    router.push("/login");
+  };
 
   return (
     <aside className="w-60 bg-surface border-r border-border/50 min-h-screen flex flex-col">
@@ -71,7 +79,10 @@ export default function AdminSidebar() {
       </nav>
 
       <div className="p-3 border-t border-border/50">
-        <button className="flex items-center gap-3 px-3 py-2.5 text-sm text-ivory-dim hover:text-error transition-colors w-full">
+        <button
+          onClick={handleSignOut}
+          className="flex items-center gap-3 px-3 py-2.5 text-sm text-ivory-dim hover:text-error transition-colors w-full"
+        >
           <LogOut size={16} strokeWidth={1.5} />
           Sign Out
         </button>

@@ -40,16 +40,15 @@ export async function POST(request: NextRequest) {
   if (existingUser) {
     // Login
     const token = generateToken();
-    const userId = existingUser.id;
-    sessions[token] = { userId, createdAt: new Date().toISOString() };
+    const existingUserId = existingUser.id;
+    sessions[token] = { userId: existingUserId, createdAt: new Date().toISOString() };
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       success: true,
-      data: {
-        user: { id: userId, email, name: existingUser.name, role: existingUser.role },
-        token,
-      },
+      data: { user: { id: existingUserId, email, name: existingUser.name, role: existingUser.role }, token },
     });
+    res.cookies.set("token", token, { httpOnly: true, maxAge: 60 * 60 * 24, path: "/" });
+    return res;
   }
 
   // Register (for demo, auto-create)
@@ -67,11 +66,10 @@ export async function POST(request: NextRequest) {
   const token = generateToken();
   sessions[token] = { userId, createdAt: new Date().toISOString() };
 
-  return NextResponse.json({
+  const res = NextResponse.json({
     success: true,
-    data: {
-      user: users[userId],
-      token,
-    },
+    data: { user: users[userId], token },
   });
+  res.cookies.set("token", token, { httpOnly: true, maxAge: 60 * 60 * 24, path: "/" });
+  return res;
 }

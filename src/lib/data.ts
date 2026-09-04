@@ -330,14 +330,14 @@ export const testimonials: Testimonial[] = [
 ];
 
 export const galleryImages: GalleryImage[] = [
-  { id: "g-1", url: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800&q=80", alt: "Elegant dining room with ambient lighting", category: "restaurant" },
-  { id: "g-2", url: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&q=80", alt: "Beautifully plated wagyu dish", category: "food" },
+  { id: "g-1", url: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200&q=90", alt: "Elegant dining room with ambient lighting", category: "restaurant" },
+  { id: "g-2", url: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1200&q=90", alt: "Beautifully plated wagyu dish", category: "food" },
   { id: "g-3", url: "https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=800&q=80", alt: "Chef preparing a dish", category: "kitchen" },
-  { id: "g-4", url: "https://images.unsplash.com/photo-1514933651103-005eec06c04d?w=800&q=80", alt: "Private dining room", category: "restaurant" },
+  { id: "g-4", url: "https://images.unsplash.com/photo-1514933651103-005eec06c04d?w=1200&q=90", alt: "Private dining room", category: "restaurant" },
   { id: "g-5", url: "https://images.unsplash.com/photo-1476224203421-9ac39bcb3327?w=800&q=80", alt: "Dessert presentation", category: "food" },
-  { id: "g-6", url: "https://images.unsplash.com/photo-1594615752542-14e7e0a5e18b?w=800&q=80", alt: "Candlelit table setting", category: "atmosphere" },
+  { id: "g-6", url: "https://images.unsplash.com/photo-1594615752542-14e7e0a5e18b?w=1200&q=90", alt: "Candlelit table setting", category: "atmosphere" },
   { id: "g-7", url: "https://images.unsplash.com/photo-1577219491135-ce398739595b?w=800&q=80", alt: "Head chef in the kitchen", category: "chef" },
-  { id: "g-8", url: "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=800&q=80", alt: "Cocktail preparation", category: "food" },
+  { id: "g-8", url: "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=1200&q=90", alt: "Cocktail preparation", category: "food" },
 ];
 
 export const reservationTimeSlots = [

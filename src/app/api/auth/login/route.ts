@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 
-// Mock login - same endpoint as signup but returns token for existing or new user
+const sessions: Record<string, any> = {};
+
 export async function POST(request: NextRequest) {
   const { email, password } = await request.json();
 
@@ -11,21 +13,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const token = randomUUID().replace(/-/g, "");
+  const userId = `user-${randomUUID().slice(0, 8)}`;
   const name = email.split("@")[0];
-  const userId = `user-${Date.now()}`;
-  const token = `mock-jwt-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-  return NextResponse.json({
+  sessions[token] = { userId, email, name, role: "admin", createdAt: new Date().toISOString() };
+
+  const res = NextResponse.json({
     success: true,
     data: {
-      user: {
-        id: userId,
-        email,
-        name: name.charAt(0).toUpperCase() + name.slice(1),
-        role: "customer",
-        phone: "+95 9 000 000 000",
-      },
+      user: { id: userId, email, name: name.charAt(0).toUpperCase() + name.slice(1), role: "admin" },
       token,
     },
   });
+
+  res.cookies.set("token", token, { httpOnly: true, maxAge: 60 * 60 * 24, path: "/" });
+  return res;
 }
