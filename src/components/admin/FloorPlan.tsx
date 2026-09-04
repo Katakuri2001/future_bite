@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { floorPlanTables } from "@/lib/data";
+import { useEffect, useState } from "react";
 import type { FloorPlanTable } from "@/lib/types";
 
 const statusColors: Record<string, string> = {
@@ -59,6 +59,17 @@ function TableTile({ table }: { table: FloorPlanTable }) {
 }
 
 export default function FloorPlan() {
+  const [tables, setTables] = useState<FloorPlanTable[]>([]);
+
+  useEffect(() => {
+    fetch("/api/admin/floor-plan")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) setTables(data.data);
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -81,7 +92,6 @@ export default function FloorPlan() {
       </div>
 
       <div className="bg-surface border border-border/50 p-6 relative min-h-[500px]">
-        {/* Restaurant outline */}
         <div className="absolute inset-4 border border-border/30 rounded-sm">
           <span className="absolute top-2 left-3 text-ivory-dim text-[10px] uppercase tracking-wider">
             Main Dining
@@ -94,14 +104,13 @@ export default function FloorPlan() {
           </span>
         </div>
 
-        {floorPlanTables.map((table) => (
+        {tables.map((table) => (
           <TableTile key={table.id} table={table} />
         ))}
       </div>
 
-      {/* Table details */}
       <div className="mt-6 grid grid-cols-2 md:grid-cols-5 gap-3">
-        {floorPlanTables.map((table) => (
+        {tables.map((table) => (
           <div
             key={table.id}
             className="bg-surface border border-border/50 p-3"

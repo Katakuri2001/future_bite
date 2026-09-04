@@ -14,7 +14,18 @@ const inter = Inter({
   display: "swap",
 });
 
+function resolveSiteUrl(): string {
+  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL;
+  if (process.env.NEXT_PUBLIC_VERCEL_URL)
+    return `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`;
+  if (process.env.NEXT_PUBLIC_URL) return process.env.NEXT_PUBLIC_URL;
+  if (process.env.URL) return process.env.URL;
+  if (process.env.DEPLOY_URL) return process.env.DEPLOY_URL;
+  return "http://localhost:3000";
+}
+
 export const metadata: Metadata = {
+  metadataBase: new URL(resolveSiteUrl()),
   title: {
     default: "FutureBite — Dining, Reimagined.",
     template: "%s | FutureBite",

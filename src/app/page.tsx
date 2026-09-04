@@ -10,24 +10,44 @@ import Testimonials from "@/components/marketing/Testimonials";
 import Location from "@/components/marketing/Location";
 import FinalCTA from "@/components/marketing/FinalCTA";
 import Footer from "@/components/marketing/Footer";
+import MotionProvider from "@/components/motion/MotionProvider";
+import { MotionSection } from "@/components/motion";
 
 export default function HomePage() {
   return (
-    <>
+    <MotionProvider>
       <Navigation />
       <main>
         <Hero />
-        <ReservationFinder />
-        <ExperienceSection />
-        <SignatureMenu />
-        <TonightSection />
-        <ChefSection />
-        <Gallery />
-        <Testimonials />
-        <Location />
-        <FinalCTA />
+        <MotionSection>
+          <ReservationFinder />
+        </MotionSection>
+        <MotionSection>
+          <ExperienceSection />
+        </MotionSection>
+        <MotionSection>
+          <SignatureMenu />
+        </MotionSection>
+        <MotionSection>
+          <TonightSection />
+        </MotionSection>
+        <MotionSection>
+          <ChefSection />
+        </MotionSection>
+        <MotionSection>
+          <Gallery />
+        </MotionSection>
+        <MotionSection>
+          <Testimonials />
+        </MotionSection>
+        <MotionSection>
+          <Location />
+        </MotionSection>
+        <MotionSection>
+          <FinalCTA />
+        </MotionSection>
       </main>
       <Footer />
-    </>
+    </MotionProvider>
   );
 }

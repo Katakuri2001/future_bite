@@ -10,7 +10,6 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { kitchenOrders } from "@/lib/data";
 import type { KitchenOrder, OrderStatus } from "@/lib/types";
 
 function formatElapsed(seconds: number): string {
@@ -129,8 +128,17 @@ function OrderCard({
 }
 
 export default function KitchenBoard() {
-  const [orders, setOrders] = useState<KitchenOrder[]>(kitchenOrders);
+  const [orders, setOrders] = useState<KitchenOrder[]>([]);
   const [, setLastRefresh] = useState(new Date());
+
+  useEffect(() => {
+    fetch("/api/kitchen")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) setOrders(data.data);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {

@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import Navigation from "@/components/marketing/Navigation";
 import Footer from "@/components/marketing/Footer";
 import ReservationFlow from "@/components/reservations/ReservationFlow";
+import MotionProvider from "@/components/motion/MotionProvider";
 
 export const metadata: Metadata = {
   title: "Reservations",
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 
 export default function ReservePage() {
   return (
-    <>
+    <MotionProvider>
       <Navigation />
       <main className="min-h-screen pt-28 pb-16">
         <div className="section-padding !pt-8 !pb-0">
@@ -38,6 +39,6 @@ export default function ReservePage() {
         </div>
       </main>
       <Footer />
-    </>
+    </MotionProvider>
   );
 }
