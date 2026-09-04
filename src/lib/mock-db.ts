@@ -59,6 +59,9 @@ export interface MockDB {
 const DATA_DIR = path.join(process.cwd(), ".data");
 const DB_PATH = path.join(DATA_DIR, "db.json");
 
+const inMemoryOnly = Boolean(process.env.VERCEL);
+let memoryDB: MockDB | null = null;
+
 const seedUsers: MockUser[] = [
   {
     id: "user-admin",
@@ -142,7 +145,19 @@ function createEmptyDB(): MockDB {
   };
 }
 
+function createSeededDB(): MockDB {
+  const db = createEmptyDB();
+  seedReservations.forEach((r) => {
+    db.reservations[r.id] = r;
+  });
+  return db;
+}
+
 async function ensureDBFile(): Promise<MockDB> {
+  if (inMemoryOnly) {
+    if (!memoryDB) memoryDB = createSeededDB();
+    return memoryDB;
+  }
   try {
     const raw = await fs.readFile(DB_PATH, "utf-8");
     const parsed = JSON.parse(raw);
@@ -153,12 +168,8 @@ async function ensureDBFile(): Promise<MockDB> {
     }
     return db;
   } catch {
-    const db = createEmptyDB();
-    seedReservations.forEach((r) => {
-      db.reservations[r.id] = r;
-    });
-    await fs.mkdir(DATA_DIR, { recursive: true });
-    await fs.writeFile(DB_PATH, JSON.stringify(db, null, 2), "utf-8");
+    const db = createSeededDB();
+    await fs.writeFile(DB_PATH, JSON.stringify(db, null, 2), "utf-8").catch(() => {});
     return db;
   }
 }
@@ -168,8 +179,14 @@ export async function readDB(): Promise<MockDB> {
 }
 
 export async function writeDB(db: MockDB): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(DB_PATH, JSON.stringify(db, null, 2), "utf-8");
+  if (inMemoryOnly) return;
+  try {
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    await fs.writeFile(DB_PATH, JSON.stringify(db, null, 2), "utf-8");
+  } catch {
+    // Read-only filesystem (e.g. serverless): data lives in memory for the
+    // lifetime of the function instance. Mutations still apply to `db`.
+  }
 }
 
 export function generateToken(): string {

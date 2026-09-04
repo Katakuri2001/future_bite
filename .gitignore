@@ -22,3 +22,5 @@ worker/dist/
 .github/
 
 .data/
+.vercel
+.env*
