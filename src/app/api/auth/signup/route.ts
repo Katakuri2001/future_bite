@@ -1,33 +1,77 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
+
+// In-memory "database" for mock API
+const users: Record<string, any> = {};
+const sessions: Record<string, any> = {};
+const reservations: Record<string, any> = {};
+const orders: Record<string, any> = {};
+
+function generateToken(): string {
+  return randomUUID().replace(/-/g, "");
+}
+
+function getAuthUser(request: NextRequest): { user: any; token: string } | null {
+  const authHeader = request.headers.get("authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
+  const token = authHeader.slice(7);
+  const session = sessions[token];
+  if (!session) return null;
+  const user = users[session.userId];
+  if (!user) return null;
+  return { user, token };
+}
 
 export async function POST(request: NextRequest) {
-  try {
-    const { email, password, name } = await request.json();
+  const { email, password } = await request.json();
 
-    if (!email || !password || !name) {
-      return NextResponse.json(
-        { success: false, error: "All fields required" },
-        { status: 400 }
-      );
-    }
+  if (!email || !password) {
+    return NextResponse.json(
+      { success: false, error: "Email and password are required" },
+      { status: 400 }
+    );
+  }
 
-    // In production: create user in database, hash password
+  // Check if user exists
+  const existingUser = Object.values(users).find(
+    (u) => u.email === email
+  );
+
+  if (existingUser) {
+    // Login
+    const token = generateToken();
+    const userId = existingUser.id;
+    sessions[token] = { userId, createdAt: new Date().toISOString() };
+
     return NextResponse.json({
       success: true,
       data: {
-        user: {
-          id: `user-${Date.now()}`,
-          email,
-          name,
-          role: "customer",
-        },
-        token: "mock-jwt-token",
+        user: { id: userId, email, name: existingUser.name, role: existingUser.role },
+        token,
       },
     });
-  } catch {
-    return NextResponse.json(
-      { success: false, error: "Internal server error" },
-      { status: 500 }
-    );
   }
+
+  // Register (for demo, auto-create)
+  const userId = `user-${randomUUID().slice(0, 8)}`;
+  const name = email.split("@")[0];
+  users[userId] = {
+    id: userId,
+    email,
+    name: name.charAt(0).toUpperCase() + name.slice(1),
+    role: "customer",
+    phone: "+95 9 000 000 000",
+    createdAt: new Date().toISOString(),
+  };
+
+  const token = generateToken();
+  sessions[token] = { userId, createdAt: new Date().toISOString() };
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      user: users[userId],
+      token,
+    },
+  });
 }

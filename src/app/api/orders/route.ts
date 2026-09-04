@@ -1,71 +1,73 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
+import { randomUUID } from "crypto";
 
-const orderItemSchema = z.object({
-  menuItemId: z.string(),
-  name: z.string(),
-  quantity: z.number().min(1),
-  price: z.number().min(0),
-  variants: z.array(z.string()).optional(),
-  addons: z.array(z.object({ name: z.string(), price: z.number() })).optional(),
-  specialInstructions: z.string().optional(),
-});
+let orders: Record<string, any> = {};
+let orderCounter = 1000;
 
-const orderSchema = z.object({
-  tableId: z.string(),
-  items: z.array(orderItemSchema).min(1),
-  specialInstructions: z.string().optional(),
-});
+function calculateOrderTotals(items: any[]) {
+  const subtotal = items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
+  const tax = Math.round(subtotal * 0.1);
+  const serviceCharge = Math.round(subtotal * 0.05);
+  const total = subtotal + tax + serviceCharge;
+  return { subtotal, tax, serviceCharge, total };
+}
 
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const validated = orderSchema.parse(body);
+  const body = await request.json();
+  const { tableId, tableNumber, items, specialInstructions } = body;
 
-    // Calculate totals server-side (never trust client prices)
-    const subtotal = validated.items.reduce(
-      (sum, item) => sum + item.price * item.quantity,
-      0
-    );
-    const tax = Math.round(subtotal * 0.1); // 10% tax
-    const serviceCharge = Math.round(subtotal * 0.05); // 5% service
-    const total = subtotal + tax + serviceCharge;
-
-    const orderNumber = `#${1000 + Math.floor(Math.random() * 9000)}`;
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        id: `ord-${Date.now()}`,
-        orderNumber,
-        ...validated,
-        subtotal,
-        tax,
-        serviceCharge,
-        total,
-        status: "pending",
-        paymentStatus: "pending",
-        createdAt: new Date().toISOString(),
-      },
-    });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { success: false, error: "Validation failed", details: error.errors },
-        { status: 400 }
-      );
-    }
+  if (!items || !Array.isArray(items) || items.length === 0) {
     return NextResponse.json(
-      { success: false, error: "Internal server error" },
-      { status: 500 }
+      { success: false, error: "Items are required" },
+      { status: 400 }
     );
   }
+
+  // Validate and calculate server-side
+  const validatedItems = items.map((item: any) => ({
+    menuItemId: item.menuItemId || item.id,
+    name: item.name || "Unknown",
+    quantity: Math.max(1, parseInt(item.quantity) || 1),
+    price: Math.max(0, parseInt(item.price) || 0),
+    variants: item.variants || [],
+    addons: item.addons || [],
+    specialInstructions: item.specialInstructions || "",
+  }));
+
+  const { subtotal, tax, serviceCharge, total } = calculateOrderTotals(validatedItems);
+  const orderNumber = `#${++orderCounter}`;
+  const id = `ord-${randomUUID().slice(0, 8)}`;
+
+  const order = {
+    id,
+    orderNumber,
+    tableId,
+    tableNumber,
+    items: validatedItems,
+    subtotal,
+    tax,
+    serviceCharge,
+    total,
+    status: "pending",
+    paymentStatus: "pending",
+    specialInstructions: specialInstructions || "",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  orders[id] = order;
+
+  return NextResponse.json({
+    success: true,
+    data: order,
+  });
 }
 
 export async function GET() {
-  // In production: fetch orders from database
   return NextResponse.json({
     success: true,
-    data: [],
+    data: Object.values(orders).sort(
+      (a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    ),
   });
 }

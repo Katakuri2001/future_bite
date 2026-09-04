@@ -1,23 +1,47 @@
+"use client"
+import { motion } from "framer-motion";
+import { OptimizedImage } from "@/components/motion/OptimizedImage";
+
 export default function ChefSection() {
   return (
     <section className="section-padding bg-bg-elevated">
       <div className="container-wide mx-auto">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center">
-          {/* Image */}
-          <div className="relative">
+        <motion.div
+          variants={{
+            hidden: { opacity: 0 },
+            show: {
+              opacity: 1,
+              transition: { staggerChildren: 0.15 },
+            },
+          }}
+          initial="hidden"
+          whileInView="show"
+          viewport={{ once: true, amount: 0.3 }}
+          className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center"
+        >
+          <motion.div
+            variants={{
+              hidden: { opacity: 0, scale: 0.95 },
+              show: { opacity: 1, scale: 1, transition: { duration: 1 } },
+            }}
+            className="relative"
+          >
             <div className="aspect-[3/4] overflow-hidden bg-surface">
-              <img
+              <OptimizedImage
                 src="https://images.unsplash.com/photo-1577219491135-ce398739595b?w=800&q=80"
                 alt="Head Chef Kenji Nakamura"
                 className="w-full h-full object-cover"
-                loading="lazy"
               />
             </div>
             <div className="absolute -bottom-6 -right-6 w-32 h-32 border border-gold/30" />
-          </div>
+          </motion.div>
 
-          {/* Content */}
-          <div>
+          <motion.div
+            variants={{
+              hidden: { opacity: 0, x: 40 },
+              show: { opacity: 1, x: 0, transition: { duration: 0.8 } },
+            }}
+          >
             <p className="text-label mb-6">The Kitchen</p>
             <blockquote className="text-display text-2xl md:text-3xl text-ivory mb-8 leading-snug">
               &ldquo;We don&apos;t cook for the moment. We cook for the memory.&rdquo;
@@ -48,8 +72,8 @@ export default function ChefSection() {
                 brushstroke in a larger narrative of taste and memory.
               </p>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       </div>
     </section>
   );

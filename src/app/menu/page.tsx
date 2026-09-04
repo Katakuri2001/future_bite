@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Navigation from "@/components/marketing/Navigation";
 import Footer from "@/components/marketing/Footer";
 import MenuGrid from "@/components/menu/MenuGrid";
+import MotionProvider from "@/components/motion/MotionProvider";
 
 export const metadata: Metadata = {
   title: "Menu",
@@ -11,7 +12,7 @@ export const metadata: Metadata = {
 
 export default function MenuPage() {
   return (
-    <>
+    <MotionProvider>
       <Navigation />
       <main className="min-h-screen pt-28 pb-16">
         <section className="section-padding !pt-8">
@@ -31,6 +32,6 @@ export default function MenuPage() {
         </section>
       </main>
       <Footer />
-    </>
+    </MotionProvider>
   );
 }
