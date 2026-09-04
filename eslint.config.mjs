@@ -6,7 +6,7 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
-    files: ["src/app/api/**", "src/lib/data.ts"],
+    files: ["src/app/api/**", "src/lib/data.ts", "src/lib/mock-db.ts"],
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
     },

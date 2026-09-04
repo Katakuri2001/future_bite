@@ -20,3 +20,5 @@ frontend/build/
 worker/dist/
 
 .github/
+
+.data/

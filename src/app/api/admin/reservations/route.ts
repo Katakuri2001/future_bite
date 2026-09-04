@@ -1,11 +1,38 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { readDB } from "@/lib/mock-db";
 
 export async function GET() {
-  const reservations = [
-    { id: "res-001", confirmationCode: "FB-2026-0001", customerName: "Sarah Chen", customerEmail: "sarah@email.com", customerPhone: "+95 9 111 111 111", date: "2026-09-04", time: "19:30", partySize: 2, tableNumber: 1, experience: "window", status: "confirmed" },
-    { id: "res-002", confirmationCode: "FB-2026-0002", customerName: "James Patel", customerEmail: "james@email.com", customerPhone: "+95 9 222 222 222", date: "2026-09-04", time: "20:00", partySize: 4, tableNumber: 4, experience: "main", status: "confirmed" },
-    { id: "res-003", confirmationCode: "FB-2026-0003", customerName: "Lin Wei", customerEmail: "lin@email.com", customerPhone: "+95 9 333 333 333", date: "2026-09-05", time: "19:00", partySize: 6, tableNumber: 5, experience: "main", status: "confirmed" },
-  ];
+  const db = await readDB();
+  const reservations = Object.values(db.reservations).sort(
+    (a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
 
   return NextResponse.json({ success: true, data: reservations });
+}
+
+export async function POST(request: NextRequest) {
+  const db = await readDB();
+  const body = await request.json();
+  const { confirmationCode, customerName, date, time, partySize } = body;
+  const id = `res-${Date.now()}`;
+  const reservation = {
+    id,
+    confirmationCode:
+      confirmationCode ||
+      `FB-${new Date().getFullYear()}-${String(db.resCounter++).padStart(4, "0")}`,
+    customerName,
+    customerEmail: body.customerEmail || "",
+    customerPhone: body.customerPhone || "",
+    date,
+    time,
+    partySize,
+    tableNumber: body.tableNumber || 1,
+    experience: body.experience || "main",
+    specialRequests: body.specialRequests || "",
+    status: body.status || "pending",
+    createdAt: new Date().toISOString(),
+  };
+  db.reservations[id] = reservation;
+  return NextResponse.json({ success: true, data: reservation });
 }

@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "crypto";
-
-const sessions: Record<string, any> = {};
+import { readDB, writeDB, generateToken, sanitizeUser } from "@/lib/mock-db";
 
 export async function POST(request: NextRequest) {
   const { email, password } = await request.json();
@@ -13,20 +11,30 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const token = randomUUID().replace(/-/g, "");
-  const userId = `user-${randomUUID().slice(0, 8)}`;
-  const name = email.split("@")[0];
+  const db = await readDB();
+  const user = db.users.find(
+    (u) => u.email.toLowerCase() === String(email).toLowerCase()
+  );
 
-  sessions[token] = { userId, email, name, role: "admin", createdAt: new Date().toISOString() };
+  if (!user || user.password !== password) {
+    return NextResponse.json(
+      { success: false, error: "Invalid email or password" },
+      { status: 401 }
+    );
+  }
+
+  const token = generateToken();
+  db.sessions[token] = user.id;
+  await writeDB(db);
 
   const res = NextResponse.json({
     success: true,
-    data: {
-      user: { id: userId, email, name: name.charAt(0).toUpperCase() + name.slice(1), role: "admin" },
-      token,
-    },
+    data: { user: sanitizeUser(user), token },
   });
-
-  res.cookies.set("token", token, { httpOnly: true, maxAge: 60 * 60 * 24, path: "/" });
+  res.cookies.set("token", token, {
+    httpOnly: true,
+    maxAge: 60 * 60 * 24 * 7,
+    path: "/",
+  });
   return res;
 }

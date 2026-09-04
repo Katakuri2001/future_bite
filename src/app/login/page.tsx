@@ -110,8 +110,14 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center text-ivory-dim text-xs mt-6">
-          Demo: use any email/password to sign in
+          Demo credentials do not grant admin access. Demo accounts:
         </p>
+        <div className="mt-3 bg-bg border border-border/30 p-4 text-xs text-ivory-dim space-y-1 font-mono">
+          <p><span className="text-gold">admin</span>    admin@futurebite.com / admin123</p>
+          <p><span className="text-gold">manager</span>  manager@futurebite.com / manager123</p>
+          <p><span className="text-gold">kitchen</span>  kitchen@futurebite.com / kitchen123</p>
+          <p><span className="text-gold">guest</span>    guest@futurebite.com / guest123</p>
+        </div>
       </motion.div>
     </div>
   );

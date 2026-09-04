@@ -1,16 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "crypto";
-
-// In-memory "database" for mock API
-const users: Record<string, any> = {};
-const sessions: Record<string, any> = {};
-
-function generateToken(): string {
-  return randomUUID().replace(/-/g, "");
-}
+import { readDB, writeDB, generateToken, sanitizeUser } from "@/lib/mock-db";
 
 export async function POST(request: NextRequest) {
-  const { email, password } = await request.json();
+  const { email, password, name } = await request.json();
 
   if (!email || !password) {
     return NextResponse.json(
@@ -19,44 +11,45 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Check if user exists
-  const existingUser = Object.values(users).find(
-    (u) => u.email === email
-  );
+  const normalizedEmail = String(email).toLowerCase();
 
-  if (existingUser) {
-    // Login
-    const token = generateToken();
-    const existingUserId = existingUser.id;
-    sessions[token] = { userId: existingUserId, createdAt: new Date().toISOString() };
-
-    const res = NextResponse.json({
-      success: true,
-      data: { user: { id: existingUserId, email, name: existingUser.name, role: existingUser.role }, token },
-    });
-    res.cookies.set("token", token, { httpOnly: true, maxAge: 60 * 60 * 24, path: "/" });
-    return res;
+  const db = await readDB();
+  const existing = db.users.find((u) => u.email.toLowerCase() === normalizedEmail);
+  if (existing) {
+    return NextResponse.json(
+      { success: false, error: "An account with this email already exists. Please sign in." },
+      { status: 409 }
+    );
   }
 
-  // Register (for demo, auto-create)
-  const userId = `user-${randomUUID().slice(0, 8)}`;
-  const name = email.split("@")[0];
-  users[userId] = {
-    id: userId,
-    email,
-    name: name.charAt(0).toUpperCase() + name.slice(1),
-    role: "customer",
+  const user = {
+    id: `user-${generateToken().slice(0, 8)}`,
+    email: normalizedEmail,
+    name: (name || normalizedEmail.split("@")[0])
+      .replace(/[^a-zA-Z0-9 ]/g, "")
+      .trim()
+      .split(" ")
+      .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" "),
+    role: "customer" as const,
+    password: String(password),
     phone: "+95 9 000 000 000",
     createdAt: new Date().toISOString(),
   };
 
+  db.users.push(user);
   const token = generateToken();
-  sessions[token] = { userId, createdAt: new Date().toISOString() };
+  db.sessions[token] = user.id;
+  await writeDB(db);
 
   const res = NextResponse.json({
     success: true,
-    data: { user: users[userId], token },
+    data: { user: sanitizeUser(user), token },
   });
-  res.cookies.set("token", token, { httpOnly: true, maxAge: 60 * 60 * 24, path: "/" });
+  res.cookies.set("token", token, {
+    httpOnly: true,
+    maxAge: 60 * 60 * 24 * 7,
+    path: "/",
+  });
   return res;
 }

@@ -1,33 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
+import { readDB, writeDB, generateToken } from "@/lib/mock-db";
 
-const reservations: Record<string, any> = {};
-let resCounter = 1;
-
-// Seed initial data
-const seedData = [
-  { customerName: "Sarah Chen", date: "2026-09-04", time: "19:30", partySize: 2, tableNumber: 1 },
-  { customerName: "James Patel", date: "2026-09-04", time: "20:00", partySize: 4, tableNumber: 4 },
-  { customerName: "Lin Wei", date: "2026-09-05", time: "19:00", partySize: 6, tableNumber: 5 },
-];
-
-seedData.forEach((s) => {
-  const id = `res-${resCounter++}`;
-  reservations[id] = {
-    id,
-    confirmationCode: `FB-2026-${String(resCounter).padStart(4, "0")}`,
-    customerName: s.customerName,
-    customerEmail: `${s.customerName.toLowerCase().replace(" ", "")}@email.com`,
-    customerPhone: "+95 9 000 000 000",
-    date: s.date,
-    time: s.time,
-    partySize: s.partySize,
-    tableNumber: s.tableNumber,
-    experience: "main",
-    specialRequests: "",
-    status: "confirmed",
-    createdAt: new Date().toISOString(),
-  };
-});
+const experienceTableMap: Record<string, { number: number; capacity: number }[]> = {
+  window: [
+    { number: 1, capacity: 2 },
+    { number: 2, capacity: 2 },
+    { number: 3, capacity: 4 },
+  ],
+  bar: [
+    { number: 7, capacity: 2 },
+    { number: 8, capacity: 2 },
+  ],
+  private: [
+    { number: 9, capacity: 10 },
+    { number: 10, capacity: 12 },
+  ],
+  main: [
+    { number: 4, capacity: 4 },
+    { number: 5, capacity: 6 },
+    { number: 6, capacity: 8 },
+  ],
+};
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -48,35 +41,72 @@ export async function GET(request: NextRequest) {
     { number: 10, capacity: 12, experience: "private", status: "reserved" },
   ];
 
-  const available = tables.filter((t) => t.status === "available" && t.capacity >= guests);
+  const available = tables.filter(
+    (t) => t.status === "available" && t.capacity >= guests
+  );
 
-  return NextResponse.json({ date, time, guests, availableTables: available, total: available.length });
+  return NextResponse.json({
+    success: true,
+    date,
+    time,
+    guests,
+    availableTables: available,
+    total: available.length,
+  });
 }
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { date, time, partySize, experience, name, email, phone, specialRequests } = body;
+  const {
+    date,
+    time,
+    partySize,
+    experience,
+    customerName,
+    customerEmail,
+    customerPhone,
+    name,
+    email,
+    phone,
+    specialRequests,
+    preferences,
+  } = body;
 
-  const confirmationCode = `FB-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9999)).padStart(4, "0")}`;
-  const id = `res-${Date.now()}`;
+  if (!date || !time || !partySize) {
+    return NextResponse.json(
+      { success: false, error: "Date, time and party size are required" },
+      { status: 400 }
+    );
+  }
+
+  const db = await readDB();
+  const confirmationCode = `FB-${new Date().getFullYear()}-${String(db.resCounter++).padStart(4, "0")}`;
+  const id = `res-${generateToken().slice(0, 8)}`;
+
+  const experienceCandidates = experienceTableMap[experience as string] || experienceTableMap.main;
+  const table = experienceCandidates
+    .filter((t) => t.capacity >= partySize)
+    .sort((a, b) => a.capacity - b.capacity)[0] || { number: Math.floor(Math.random() * 10) + 1, capacity: partySize };
 
   const reservation = {
     id,
     confirmationCode,
-    customerName: name,
-    customerEmail: email,
-    customerPhone: phone,
+    customerName: customerName || name || "Guest",
+    customerEmail: customerEmail || email || "",
+    customerPhone: customerPhone || phone || "",
     date,
     time,
     partySize,
-    tableNumber: Math.floor(Math.random() * 10) + 1,
-    experience,
-    specialRequests,
+    tableNumber: table.number,
+    experience: experience || "main",
+    specialRequests: specialRequests || "",
+    preferences: preferences || [],
     status: "confirmed",
     createdAt: new Date().toISOString(),
   };
 
-  reservations[id] = reservation;
+  db.reservations[id] = reservation;
+  await writeDB(db);
 
   return NextResponse.json({ success: true, data: reservation });
 }
