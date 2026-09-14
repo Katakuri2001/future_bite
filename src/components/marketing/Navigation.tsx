@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X, User } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -51,10 +52,15 @@ export default function Navigation() {
       >
         <div className="container-wide mx-auto px-6 lg:px-10">
           <div className="flex items-center justify-between h-20">
-            <Link href="/" className="relative z-10">
-              <span className="text-display text-2xl tracking-wide text-ivory">
-                FutureBite
-              </span>
+            <Link href="/" className="relative z-10 flex items-center gap-3">
+              <Image
+                src="/future_bite_logo.jpeg"
+                alt="FutureBite"
+                width={88}
+                height={48}
+                className="h-9 w-auto object-contain"
+                priority
+              />
             </Link>
 
             <div className="hidden md:flex items-center gap-10">

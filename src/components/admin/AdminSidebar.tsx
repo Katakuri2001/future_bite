@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
 import {
@@ -45,10 +46,14 @@ export default function AdminSidebar() {
     <aside className="w-60 bg-surface border-r border-border/50 min-h-screen flex flex-col">
       <div className="p-5 border-b border-border/50">
         <Link href="/admin" className="block">
-          <span className="text-display text-lg text-ivory tracking-wide">
-            FutureBite
-          </span>
-          <span className="block text-[10px] tracking-[0.2em] uppercase text-gold mt-0.5">
+          <Image
+            src="/future_bite_logo.jpeg"
+            alt="FutureBite"
+            width={110}
+            height={60}
+            className="h-8 w-auto object-contain"
+          />
+          <span className="block text-[10px] tracking-[0.2em] uppercase text-gold mt-2">
             Admin
           </span>
         </Link>

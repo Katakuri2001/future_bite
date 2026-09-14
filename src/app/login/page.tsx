@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { motion } from "framer-motion";
-import { Mail, Lock, ChefHat, AlertCircle } from "lucide-react";
+import { Mail, Lock, AlertCircle } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -48,11 +49,14 @@ export default function LoginPage() {
       >
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-3 mb-4">
-            <ChefHat size={32} className="text-gold" />
-            <span className="text-display text-3xl text-ivory">FutureBite</span>
-          </div>
-          <p className="text-ivory-dim text-sm">Admin Sign In</p>
+          <Image
+            src="/future_bite_logo.jpeg"
+            alt="FutureBite"
+            width={176}
+            height={96}
+            className="h-12 w-auto object-contain mx-auto mb-4"
+          />
+        <p className="text-ivory-dim text-sm">Admin Sign In</p>
         </div>
 
         {/* Form */}

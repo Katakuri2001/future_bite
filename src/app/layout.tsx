@@ -33,6 +33,13 @@ export const metadata: Metadata = {
   description:
     "An extraordinary dining experience where precision, atmosphere, and cuisine converge. Premium restaurant in Yangon, Myanmar.",
   keywords: ["restaurant", "fine dining", "Yangon", "Myanmar", "premium dining", "reservation"],
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "48x48" },
+      { url: "/icon.png", type: "image/png", sizes: "512x512" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
   openGraph: {
     type: "website",
     locale: "en_US",
