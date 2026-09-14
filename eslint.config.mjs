@@ -21,6 +21,9 @@ const eslintConfig = defineConfig([
     "worker/**",
     "db/**",
     "infra/**",
+    ".open-next/**",
+    ".wrangler/**",
+    "legacy-wrangler.toml.bak",
   ]),
 ]);
 

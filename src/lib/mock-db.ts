@@ -1,5 +1,3 @@
-import { promises as fs } from "fs";
-import path from "path";
 import { randomUUID } from "crypto";
 
 export type MockRole = "admin" | "manager" | "kitchen" | "customer";
@@ -55,15 +53,6 @@ export interface MockDB {
   resCounter: number;
   orderCounter: number;
 }
-
-const DATA_DIR = path.join(process.cwd(), ".data");
-const DB_PATH = path.join(DATA_DIR, "db.json");
-
-const inMemoryOnly =
-  Boolean(process.env.VERCEL) ||
-  Boolean(process.env.NETLIFY) ||
-  Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
-let memoryDB: MockDB | null = null;
 
 const seedUsers: MockUser[] = [
   {
@@ -137,59 +126,25 @@ const seedReservations: MockReservation[] = [
   },
 ];
 
-function createEmptyDB(): MockDB {
+function createSeededDB(): MockDB {
   return {
     users: [...seedUsers],
     sessions: {},
-    reservations: {},
+    reservations: Object.fromEntries(seedReservations.map((r) => [r.id, r])),
     orders: {},
     resCounter: 100,
     orderCounter: 1000,
   };
 }
 
-function createSeededDB(): MockDB {
-  const db = createEmptyDB();
-  seedReservations.forEach((r) => {
-    db.reservations[r.id] = r;
-  });
-  return db;
-}
-
-async function ensureDBFile(): Promise<MockDB> {
-  if (inMemoryOnly) {
-    if (!memoryDB) memoryDB = createSeededDB();
-    return memoryDB;
-  }
-  try {
-    const raw = await fs.readFile(DB_PATH, "utf-8");
-    const parsed = JSON.parse(raw);
-
-    const db = { ...createEmptyDB(), ...parsed };
-    if (!Array.isArray(db.users) || db.users.length === 0) {
-      db.users = [...seedUsers];
-    }
-    return db;
-  } catch {
-    const db = createSeededDB();
-    await fs.writeFile(DB_PATH, JSON.stringify(db, null, 2), "utf-8").catch(() => {});
-    return db;
-  }
-}
+const memoryDB = createSeededDB();
 
 export async function readDB(): Promise<MockDB> {
-  return ensureDBFile();
+  return memoryDB;
 }
 
 export async function writeDB(db: MockDB): Promise<void> {
-  if (inMemoryOnly) return;
-  try {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-    await fs.writeFile(DB_PATH, JSON.stringify(db, null, 2), "utf-8");
-  } catch {
-    // Read-only filesystem (e.g. serverless): data lives in memory for the
-    // lifetime of the function instance. Mutations still apply to `db`.
-  }
+  void db;
 }
 
 export function generateToken(): string {
