@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   ChefHat,
   Clock,
@@ -10,6 +10,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useRealtime } from "@/lib/useRealtime";
 import type { KitchenOrder, OrderStatus } from "@/lib/types";
 
 function formatElapsed(seconds: number): string {
@@ -131,14 +132,22 @@ export default function KitchenBoard() {
   const [orders, setOrders] = useState<KitchenOrder[]>([]);
   const [, setLastRefresh] = useState(new Date());
 
-  useEffect(() => {
-    fetch("/api/kitchen")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success) setOrders(data.data);
-      })
-      .catch(() => {});
+  const fetchKitchen = useCallback(async () => {
+    try {
+      const res = await fetch("/api/kitchen");
+      const data = await res.json();
+      if (data.success) setOrders(data.data);
+    } catch {
+      /* ignore */
+    }
   }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchKitchen();
+  }, [fetchKitchen]);
+
+  useRealtime(fetchKitchen);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -152,11 +161,19 @@ export default function KitchenBoard() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleStatusChange = (orderId: string, newStatus: OrderStatus) => {
-    setOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o))
-    );
-  };
+  const handleStatusChange = useCallback(
+    (orderId: string, newStatus: OrderStatus) => {
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o))
+      );
+      fetch("/api/kitchen", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: orderId, status: newStatus }),
+      }).catch(() => {});
+    },
+    []
+  );
 
   const newOrders = orders.filter((o) => o.status === "pending");
   const preparingOrders = orders.filter(
@@ -191,7 +208,10 @@ export default function KitchenBoard() {
             {orders.filter((o) => o.status !== "completed" && o.status !== "cancelled").length} active orders
           </span>
           <button
-            onClick={() => setLastRefresh(new Date())}
+            onClick={() => {
+              setLastRefresh(new Date());
+              fetchKitchen();
+            }}
             className="text-ivory-dim hover:text-gold transition-colors p-2"
             aria-label="Refresh"
           >

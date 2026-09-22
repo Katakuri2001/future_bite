@@ -120,7 +120,7 @@ export default function LoginPage() {
           <p><span className="text-gold">admin</span>    admin@futurebite.com / admin123</p>
           <p><span className="text-gold">manager</span>  manager@futurebite.com / manager123</p>
           <p><span className="text-gold">kitchen</span>  kitchen@futurebite.com / kitchen123</p>
-          <p><span className="text-gold">guest</span>    guest@futurebite.com / guest123</p>
+          <p><span className="text-gold">guest</span>    customer@futurebite.com / guest123</p>
         </div>
       </motion.div>
     </div>

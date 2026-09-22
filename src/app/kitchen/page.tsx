@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import KitchenBoard from "@/components/kitchen/KitchenBoard";
+import KitchenTabs from "@/components/kitchen/KitchenTabs";
 
 export const metadata: Metadata = {
   title: "Kitchen Display",
@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function KitchenPage() {
-  return <KitchenBoard />;
+  return <KitchenTabs />;
 }

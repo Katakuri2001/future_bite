@@ -84,7 +84,7 @@ const seedUsers: MockUser[] = [
   },
   {
     id: "user-customer",
-    email: "guest@futurebite.com",
+    email: "customer@futurebite.com",
     name: "Guest",
     role: "customer",
     password: "guest123",

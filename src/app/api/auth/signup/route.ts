@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readDB, writeDB, generateToken, sanitizeUser } from "@/lib/mock-db";
+import {
+  findUserByEmail,
+  createUser,
+  createSession,
+  sanitizeUser,
+} from "@/lib/db";
 
 export async function POST(request: NextRequest) {
   const { email, password, name } = await request.json();
@@ -13,8 +18,7 @@ export async function POST(request: NextRequest) {
 
   const normalizedEmail = String(email).toLowerCase();
 
-  const db = await readDB();
-  const existing = db.users.find((u) => u.email.toLowerCase() === normalizedEmail);
+  const existing = await findUserByEmail(normalizedEmail);
   if (existing) {
     return NextResponse.json(
       { success: false, error: "An account with this email already exists. Please sign in." },
@@ -22,25 +26,22 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const user = {
-    id: `user-${generateToken().slice(0, 8)}`,
-    email: normalizedEmail,
-    name: (name || normalizedEmail.split("@")[0])
-      .replace(/[^a-zA-Z0-9 ]/g, "")
-      .trim()
-      .split(" ")
-      .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
-      .join(" "),
-    role: "customer" as const,
-    password: String(password),
-    phone: "+95 9 000 000 000",
-    createdAt: new Date().toISOString(),
-  };
+  const displayName = (name || normalizedEmail.split("@")[0])
+    .replace(/[^a-zA-Z0-9 ]/g, "")
+    .trim()
+    .split(" ")
+    .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
 
-  db.users.push(user);
-  const token = generateToken();
-  db.sessions[token] = user.id;
-  await writeDB(db);
+  const user = await createUser({
+    email: normalizedEmail,
+    password: String(password),
+    name: displayName,
+    role: "customer",
+    phone: "+95 9 000 000 000",
+  });
+
+  const token = await createSession(user);
 
   const res = NextResponse.json({
     success: true,

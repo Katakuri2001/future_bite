@@ -6,7 +6,7 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
-    files: ["src/app/api/**", "src/lib/data.ts", "src/lib/mock-db.ts"],
+    files: ["src/app/api/**", "src/lib/data.ts", "src/lib/mock-db.ts", "src/lib/db.ts"],
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
     },
@@ -21,6 +21,7 @@ const eslintConfig = defineConfig([
     "worker/**",
     "db/**",
     "infra/**",
+    "realtime-worker/**",
     ".open-next/**",
     ".wrangler/**",
     "legacy-wrangler.toml.bak",

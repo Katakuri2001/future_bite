@@ -192,6 +192,7 @@ export interface FloorPlanTable {
   capacity: number;
   experience: TableExperience;
   status: TableStatus;
+  location?: string;
   x: number;
   y: number;
   width: number;

@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readDB, writeDB, generateToken, sanitizeUser } from "@/lib/mock-db";
+import {
+  findUserByEmail,
+  verifyPassword,
+  createSession,
+  sanitizeUser,
+} from "@/lib/db";
 
 export async function POST(request: NextRequest) {
   const { email, password } = await request.json();
@@ -11,21 +16,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const db = await readDB();
-  const user = db.users.find(
-    (u) => u.email.toLowerCase() === String(email).toLowerCase()
-  );
+  const user = await findUserByEmail(String(email));
 
-  if (!user || user.password !== password) {
+  if (!user || !(await verifyPassword(String(password), user.password_hash))) {
     return NextResponse.json(
       { success: false, error: "Invalid email or password" },
       { status: 401 }
     );
   }
 
-  const token = generateToken();
-  db.sessions[token] = user.id;
-  await writeDB(db);
+  const token = await createSession(user);
 
   const res = NextResponse.json({
     success: true,

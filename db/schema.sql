@@ -1,132 +1,312 @@
--- Cloudflare D1 (SQLite) schema for Futuristic Restaurant
-
 PRAGMA foreign_keys = ON;
 
--- Users
-CREATE TABLE users (
+-- =============================================
+-- BRANCHES (single restaurant for now, but schema supports multi-branch)
+-- =============================================
+CREATE TABLE IF NOT EXISTS branches (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  email TEXT NOT NULL UNIQUE,
+  address TEXT NOT NULL,
+  phone TEXT,
+  email TEXT,
+  timezone TEXT DEFAULT 'UTC',
+  is_active INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+-- =============================================
+-- USERS (unified — customers + staff roles)
+-- =============================================
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  branch_id TEXT NOT NULL DEFAULT 'default-branch',
+  email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'user', -- user | admin
-  barcode TEXT UNIQUE,
-  qrcode TEXT UNIQUE,
+  first_name TEXT NOT NULL,
+  last_name TEXT NOT NULL,
+  name TEXT NOT NULL,  -- display name: first_name + last_name
+  role TEXT NOT NULL DEFAULT 'customer',  -- admin|manager|kitchen|waiter|host|customer
+  phone TEXT,
+  is_active INTEGER DEFAULT 1,
   points INTEGER DEFAULT 0,
-  created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  last_login_at TEXT,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (branch_id) REFERENCES branches(id)
 );
-CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_branch ON users(branch_id);
 
--- Admins (subset of users or separate table for extra metadata)
-CREATE TABLE admins (
-  id TEXT PRIMARY KEY,
+-- =============================================
+-- SESSIONS (token → user_id, also backed by KV for fast lookups)
+-- =============================================
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
-  permissions TEXT,
-  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  expires_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
--- Dishes
-CREATE TABLE dishes (
+-- =============================================
+-- MENU CATEGORIES
+-- =============================================
+CREATE TABLE IF NOT EXISTS categories (
   id TEXT PRIMARY KEY,
+  branch_id TEXT NOT NULL DEFAULT 'default-branch',
   name TEXT NOT NULL,
+  slug TEXT NOT NULL,
   description TEXT,
-  price INTEGER NOT NULL, -- cents
-  points INTEGER DEFAULT 0,
-  category TEXT,
+  display_order INTEGER DEFAULT 0,
+  is_active INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (branch_id) REFERENCES branches(id)
+);
+
+-- =============================================
+-- MENU ITEMS (dishes)
+-- =============================================
+CREATE TABLE IF NOT EXISTS dishes (
+  id TEXT PRIMARY KEY,
+  branch_id TEXT NOT NULL DEFAULT 'default-branch',
+  category_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL,
+  description TEXT,
+  price INTEGER NOT NULL,  -- in kyat (no decimals)
   image_url TEXT,
-  available INTEGER DEFAULT 1,
-  created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  ingredients TEXT,  -- JSON array
+  allergens TEXT,     -- JSON array
+  dietary TEXT,       -- JSON array
+  is_available INTEGER DEFAULT 1,
+  is_featured INTEGER DEFAULT 0,
+  preparation_time INTEGER DEFAULT 15,
+  cost_price INTEGER,
+  points_value INTEGER DEFAULT 0,
+  display_order INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (branch_id) REFERENCES branches(id),
+  FOREIGN KEY (category_id) REFERENCES categories(id)
 );
-CREATE INDEX idx_dishes_category ON dishes(category);
+CREATE INDEX IF NOT EXISTS idx_dishes_category ON dishes(category_id);
+CREATE INDEX IF NOT EXISTS idx_dishes_branch ON dishes(branch_id);
+CREATE INDEX IF NOT EXISTS idx_dishes_slug ON dishes(slug);
 
--- Tables
-CREATE TABLE tables (
+-- =============================================
+-- TABLES
+-- =============================================
+CREATE TABLE IF NOT EXISTS tables (
   id TEXT PRIMARY KEY,
-  table_number INTEGER UNIQUE,
-  qrcode TEXT UNIQUE,
-  seats INTEGER DEFAULT 4,
-  status TEXT DEFAULT 'available' -- available|booked|occupied
+  branch_id TEXT NOT NULL DEFAULT 'default-branch',
+  number INTEGER NOT NULL,
+  capacity INTEGER NOT NULL,
+  experience TEXT DEFAULT 'main',  -- window|bar|private|patio|main
+  status TEXT DEFAULT 'available', -- available|reserved|seated|waiting|cleaning
+  location TEXT,
+  is_active INTEGER DEFAULT 1,
+  -- Floor plan coordinates
+  x INTEGER DEFAULT 0,
+  y INTEGER DEFAULT 0,
+  width INTEGER DEFAULT 80,
+  height INTEGER DEFAULT 60,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (branch_id) REFERENCES branches(id)
 );
-CREATE INDEX idx_tables_number ON tables(table_number);
+CREATE INDEX IF NOT EXISTS idx_tables_number ON tables(number);
+CREATE INDEX IF NOT EXISTS idx_tables_branch ON tables(branch_id);
 
--- Bookings
-CREATE TABLE bookings (
+-- =============================================
+-- RESERVATIONS / BOOKINGS
+-- =============================================
+CREATE TABLE IF NOT EXISTS reservations (
   id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  table_id TEXT NOT NULL,
-  booking_time DATETIME NOT NULL,
-  status TEXT DEFAULT 'booked', -- booked|occupied|cancelled
-  created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  FOREIGN KEY(user_id) REFERENCES users(id),
-  FOREIGN KEY(table_id) REFERENCES tables(id)
+  branch_id TEXT NOT NULL DEFAULT 'default-branch',
+  confirmation_code TEXT UNIQUE NOT NULL,
+  customer_name TEXT NOT NULL,
+  customer_email TEXT,
+  customer_phone TEXT,
+  date TEXT NOT NULL,
+  time TEXT NOT NULL,
+  party_size INTEGER NOT NULL,
+  table_number INTEGER,
+  experience TEXT DEFAULT 'main',
+  special_requests TEXT,
+  status TEXT DEFAULT 'confirmed',  -- pending|confirmed|seated|completed|cancelled|no-show
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (branch_id) REFERENCES branches(id)
 );
-CREATE INDEX idx_bookings_time ON bookings(booking_time);
+CREATE INDEX IF NOT EXISTS idx_reservations_date ON reservations(date);
+CREATE INDEX IF NOT EXISTS idx_reservations_branch ON reservations(branch_id);
 
--- Orders
-CREATE TABLE orders (
+-- =============================================
+-- ORDERS
+-- =============================================
+CREATE TABLE IF NOT EXISTS orders (
   id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  table_id TEXT,
-  total_amount INTEGER NOT NULL,
-  status TEXT DEFAULT 'pending', -- pending|cooking|completed|rejected
-  created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  FOREIGN KEY(user_id) REFERENCES users(id),
-  FOREIGN KEY(table_id) REFERENCES tables(id)
+  branch_id TEXT NOT NULL DEFAULT 'default-branch',
+  order_number TEXT UNIQUE NOT NULL,
+  user_id TEXT,
+  table_number INTEGER,
+  subtotal INTEGER NOT NULL DEFAULT 0,
+  tax INTEGER NOT NULL DEFAULT 0,
+  service_charge INTEGER NOT NULL DEFAULT 0,
+  total INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pending',  -- pending|accepted|preparing|plating|ready|served|completed|cancelled
+  payment_status TEXT DEFAULT 'pending',   -- pending|paid|failed|refunded
+  special_instructions TEXT,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (branch_id) REFERENCES branches(id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
 );
-CREATE INDEX idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_branch ON orders(branch_id);
+CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at);
 
--- Order Items
-CREATE TABLE order_items (
+-- =============================================
+-- ORDER ITEMS
+-- =============================================
+CREATE TABLE IF NOT EXISTS order_items (
   id TEXT PRIMARY KEY,
   order_id TEXT NOT NULL,
-  dish_id TEXT NOT NULL,
+  menu_item_id TEXT NOT NULL,
+  name TEXT NOT NULL,
   quantity INTEGER NOT NULL DEFAULT 1,
   price INTEGER NOT NULL,
-  points INTEGER DEFAULT 0,
-  FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE,
-  FOREIGN KEY(dish_id) REFERENCES dishes(id)
+  variants TEXT,  -- JSON array
+  addons TEXT,    -- JSON array
+  special_instructions TEXT,
+  status TEXT DEFAULT 'pending',  -- pending|preparing|ready|served|cancelled
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+  FOREIGN KEY (menu_item_id) REFERENCES dishes(id)
 );
-CREATE INDEX idx_order_items_order ON order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
 
--- Supplies
-CREATE TABLE supplies (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  quantity INTEGER DEFAULT 0,
-  restock_date DATETIME,
-  price INTEGER DEFAULT 0,
-  created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-);
-
--- Ratings
-CREATE TABLE ratings (
-  id TEXT PRIMARY KEY,
-  user_id TEXT,
-  rating INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
-  comment TEXT,
-  created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  FOREIGN KEY(user_id) REFERENCES users(id)
-);
-
--- Daily Sales
-CREATE TABLE daily_sales (
-  id TEXT PRIMARY KEY,
-  date TEXT NOT NULL,
-  total_income INTEGER DEFAULT 0,
-  total_expense INTEGER DEFAULT 0,
-  created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-);
-
--- Indexes for analytics
-CREATE INDEX idx_daily_sales_date ON daily_sales(date);
-
--- Order history summary table (denormalized optional)
-CREATE TABLE order_history (
+-- =============================================
+-- KITCHEN ORDERS (derived/synced from orders table for KDS display)
+-- =============================================
+CREATE TABLE IF NOT EXISTS kitchen_orders (
   id TEXT PRIMARY KEY,
   order_id TEXT NOT NULL,
+  branch_id TEXT NOT NULL DEFAULT 'default-branch',
+  order_number TEXT NOT NULL,
+  table_number INTEGER,
+  priority TEXT DEFAULT 'normal',  -- normal|urgent|delayed
+  status TEXT DEFAULT 'pending',   -- pending|preparing|plating|ready|served|completed
+  elapsed INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+  FOREIGN KEY (branch_id) REFERENCES branches(id)
+);
+CREATE INDEX IF NOT EXISTS idx_kitchen_orders_status ON kitchen_orders(status);
+CREATE INDEX IF NOT EXISTS idx_kitchen_orders_branch ON kitchen_orders(branch_id);
+
+-- =============================================
+-- STAFF (admin subset — also tracked in users table, this is for admin-specific metadata)
+-- =============================================
+CREATE TABLE IF NOT EXISTS staff (
+  id TEXT PRIMARY KEY,
+  branch_id TEXT NOT NULL DEFAULT 'default-branch',
+  user_id TEXT,  -- linked to users table
+  name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  role TEXT NOT NULL,  -- admin|manager|kitchen|waiter|host
+  phone TEXT,
+  is_active INTEGER DEFAULT 1,
+  shift TEXT,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (branch_id) REFERENCES branches(id)
+);
+CREATE INDEX IF NOT EXISTS idx_staff_branch ON staff(branch_id);
+
+-- =============================================
+-- INVENTORY / SUPPLIES
+-- =============================================
+CREATE TABLE IF NOT EXISTS supplies (
+  id TEXT PRIMARY KEY,
+  branch_id TEXT NOT NULL DEFAULT 'default-branch',
+  name TEXT NOT NULL,
+  unit TEXT NOT NULL,  -- kg|g|pcs|btl|L
+  current_stock REAL DEFAULT 0,
+  minimum_stock REAL DEFAULT 0,
+  cost REAL DEFAULT 0,
+  supplier TEXT,
+  status TEXT DEFAULT 'healthy',  -- healthy|low|critical
+  last_updated TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (branch_id) REFERENCES branches(id)
+);
+CREATE INDEX IF NOT EXISTS idx_supplies_branch ON supplies(branch_id);
+
+-- =============================================
+-- SUPPLY TRANSACTIONS (ingredients register — usage/restock/adjustment log)
+-- =============================================
+CREATE TABLE IF NOT EXISTS supply_transactions (
+  id TEXT PRIMARY KEY,
+  branch_id TEXT NOT NULL DEFAULT 'default-branch',
+  supply_id TEXT NOT NULL,
+  type TEXT NOT NULL,  -- purchase|usage|adjustment|waste
+  quantity REAL NOT NULL,  -- signed: positive adds stock, negative removes stock
+  unit_cost REAL,
+  total_cost REAL,
+  reference TEXT,       -- e.g. order number, invoice number
+  notes TEXT,
+  created_by TEXT,      -- staff name or user id
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (branch_id) REFERENCES branches(id),
+  FOREIGN KEY (supply_id) REFERENCES supplies(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_supply_tx_supply ON supply_transactions(supply_id);
+CREATE INDEX IF NOT EXISTS idx_supply_tx_created ON supply_transactions(created_at);
+
+-- =============================================
+-- TESTIMONIALS / RATINGS
+-- =============================================
+CREATE TABLE IF NOT EXISTS ratings (
+  id TEXT PRIMARY KEY,
+  branch_id TEXT NOT NULL DEFAULT 'default-branch',
   user_id TEXT,
-  table_id TEXT,
-  summary TEXT,
-  created_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  name TEXT NOT NULL,
+  rating INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
+  text TEXT,
+  date TEXT,
+  is_public INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (branch_id) REFERENCES branches(id)
 );
 
--- Notes: UUIDs are generated by application layer (Workers). Use TEXT for PKs.
+-- =============================================
+-- COUNTERS (for confirmation codes, order numbers)
+-- =============================================
+CREATE TABLE IF NOT EXISTS counters (
+  name TEXT PRIMARY KEY,
+  value INTEGER NOT NULL DEFAULT 0
+);
+
+-- =============================================
+-- DAILY SALES (for analytics)
+-- =============================================
+CREATE TABLE IF NOT EXISTS daily_sales (
+  id TEXT PRIMARY KEY,
+  branch_id TEXT NOT NULL DEFAULT 'default-branch',
+  date TEXT NOT NULL,
+  total_orders INTEGER DEFAULT 0,
+  total_revenue INTEGER DEFAULT 0,
+  total_customers INTEGER DEFAULT 0,
+  average_order_value INTEGER DEFAULT 0,
+  peak_hour INTEGER,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE(branch_id, date)
+);

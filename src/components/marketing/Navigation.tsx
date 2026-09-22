@@ -42,10 +42,14 @@ export default function Navigation() {
       <motion.nav
         className={cn(
           "fixed top-0 left-0 right-0 z-50 transition-all duration-500",
-          scrolled
-            ? "bg-bg/95 backdrop-blur-md border-b border-border/50"
-            : "bg-transparent"
+          "glass"
         )}
+        style={{
+          background: "rgba(8, 8, 8, 0.7)",
+          backdropFilter: "blur(24px)",
+          WebkitBackdropFilter: "blur(24px)",
+          borderBottom: "1px solid rgba(201, 169, 110, 0.08)",
+        }}
         initial={{ y: -100 }}
         animate={{ y: 0 }}
         transition={{ duration: 0.6, ease: "easeOut" }}

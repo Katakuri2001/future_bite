@@ -207,6 +207,102 @@
     border: 1px solid rgba(255, 255, 255, 0.05);
   }
 
+  .glass-strong {
+    background: rgba(11, 11, 11, 0.9);
+    backdrop-filter: blur(32px);
+    -webkit-backdrop-filter: blur(32px);
+    border: 1px solid rgba(201, 169, 110, 0.1);
+    box-shadow: 
+      0 0 0 1px rgba(201, 169, 110, 0.05) inset,
+      0 8px 32px rgba(0, 0, 0, 0.4);
+  }
+
+  .glass-sidebar {
+    background: linear-gradient(
+      180deg,
+      rgba(17, 17, 17, 0.85) 0%,
+      rgba(11, 11, 11, 0.9) 50%,
+      rgba(17, 17, 17, 0.85) 100%
+    );
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-right: 1px solid rgba(201, 169, 110, 0.08);
+    box-shadow: 
+      4px 0 24px rgba(0, 0, 0, 0.3),
+      inset 1px 0 0 rgba(255, 255, 255, 0.03);
+  }
+
+  .sidebar-glow {
+    position: relative;
+  }
+
+  .sidebar-glow::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    width: 1px;
+    background: linear-gradient(
+      180deg,
+      transparent 0%,
+      var(--color-gold) 20%,
+      var(--color-gold) 80%,
+      transparent 100%
+    );
+    opacity: 0.3;
+  }
+
+  @keyframes slideInFromLeft {
+    from {
+      opacity: 0;
+      transform: translateX(-100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes slideOutToLeft {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(-100%);
+    }
+  }
+
+  .animate-slide-in-left {
+    animation: slideInFromLeft 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  .animate-slide-out-left {
+    animation: slideOutToLeft 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  .nav-item {
+    @apply relative flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg transition-all duration-200;
+  }
+
+  .nav-item-active {
+    @apply bg-gold/10 text-gold;
+  }
+
+  .nav-item-inactive {
+    @apply text-ivory-dim hover:text-ivory hover:bg-surface-elevated;
+  }
+
+  .sidebar-tooltip {
+    @apply absolute left-full ml-3 px-2 py-1 text-xs bg-surface-elevated text-ivory rounded shadow-lg border border-border/50 whitespace-nowrap opacity-0 invisible transition-all duration-200 pointer-events-none z-50;
+  }
+
+  .group:hover .sidebar-tooltip {
+    @apply opacity-100 visible;
+  }
+
   .gradient-overlay {
     background: linear-gradient(
       180deg,
