@@ -6,6 +6,7 @@ export type UserRole =
   | "kitchen"
   | "waiter"
   | "host"
+  | "cashier"
   | "customer";
 
 export interface DbUser {
@@ -118,7 +119,7 @@ export interface DbKitchenOrder {
   items?: DbOrderItem[];
 }
 
-interface SessionRecord {
+export interface SessionRecord {
   userId: string;
   role: string;
   email: string;
@@ -195,6 +196,7 @@ export const DEMO_ACCOUNTS = [
   { email: "admin@futurebite.com", password: "admin123", role: "admin", name: "Alex Kim" },
   { email: "manager@futurebite.com", password: "manager123", role: "manager", name: "Maya Thompson" },
   { email: "kitchen@futurebite.com", password: "kitchen123", role: "kitchen", name: "Chef Nakamura" },
+  { email: "cashier@futurebite.com", password: "cashier123", role: "cashier", name: "Nina Park" },
   { email: "customer@futurebite.com", password: "guest123", role: "customer", name: "Guest" },
 ];
 
@@ -390,11 +392,22 @@ export async function getAllDishes() {
   return results.map((d: any) => ({
     id: d.id,
     name: d.name,
+    slug: d.slug,
+    description: d.description,
     price: d.price,
     category: d.category_name || "",
+    categoryId: d.category_id,
+    imageUrl: d.image_url,
+    ingredients: safeJson(d.ingredients),
+    allergens: safeJson(d.allergens),
+    dietary: safeJson(d.dietary),
     isAvailable: d.is_available === 1,
     isFeatured: d.is_featured === 1,
-    slug: d.slug,
+    preparationTime: d.preparation_time,
+    costPrice: d.cost_price,
+    pointsValue: d.points_value,
+    displayOrder: d.display_order,
+    createdAt: d.created_at,
   }));
 }
 
@@ -407,34 +420,75 @@ export async function getDishById(id: string) {
   return {
     id: row.id,
     name: row.name,
+    slug: row.slug,
+    description: row.description,
     price: row.price,
     category: row.category_name || "",
+    categoryId: row.category_id,
+    imageUrl: row.image_url,
+    ingredients: safeJson(row.ingredients),
+    allergens: safeJson(row.allergens),
+    dietary: safeJson(row.dietary),
     isAvailable: row.is_available === 1,
     isFeatured: row.is_featured === 1,
+    preparationTime: row.preparation_time,
+    costPrice: row.cost_price,
+    pointsValue: row.points_value,
+    displayOrder: row.display_order,
   };
+}
+
+/** Fetch full rows for a set of dish ids (POS checkout price validation). */
+export async function getDishesByIds(ids: string[]): Promise<any[]> {
+  const unique = [...new Set(ids)].filter(Boolean);
+  if (unique.length === 0) return [];
+  const placeholders = unique.map(() => "?").join(",");
+  const { results } = await getDB()
+    .prepare(`SELECT * FROM dishes WHERE id IN (${placeholders})`)
+    .bind(...unique)
+    .all<any>();
+  return results.map((d: any) => ({
+    id: d.id,
+    name: d.name,
+    slug: d.slug,
+    description: d.description,
+    price: d.price,
+    categoryId: d.category_id,
+    imageUrl: d.image_url,
+    ingredients: safeJson(d.ingredients),
+    allergens: safeJson(d.allergens),
+    dietary: safeJson(d.dietary),
+    isAvailable: d.is_available === 1,
+    isFeatured: d.is_featured === 1,
+    preparationTime: d.preparation_time,
+  }));
 }
 
 export async function createDish(data: any): Promise<any> {
   const id = data.id || `dish-${Date.now()}`;
   await getDB()
     .prepare(
-      `INSERT INTO dishes (id, branch_id, category_id, name, slug, description, price, ingredients, allergens, dietary, is_available, is_featured, preparation_time)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO dishes (id, branch_id, category_id, name, slug, description, price, image_url, ingredients, allergens, dietary, is_available, is_featured, preparation_time, cost_price, points_value, display_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
       "default-branch",
-      data.category_id || "cat-1",
+      data.category_id || (data.categoryId as string) || "cat-1",
       data.name,
       data.slug || slugify(data.name),
       data.description || "",
       parseInt(data.price) || 0,
+      data.imageUrl || data.image_url || "",
       JSON.stringify(data.ingredients || []),
       JSON.stringify(data.allergens || []),
       JSON.stringify(data.dietary || []),
       data.isAvailable === undefined ? 1 : data.isAvailable ? 1 : 0,
       data.isFeatured === undefined ? 0 : data.isFeatured ? 1 : 0,
-      parseInt(data.preparationTime) || 15
+      parseInt(data.preparationTime) || 15,
+      parseInt(data.costPrice) || 0,
+      parseInt(data.pointsValue) || 0,
+      parseInt(data.displayOrder) || 0
     )
     .run();
   return { id, ...data, createdAt: new Date().toISOString() };
@@ -451,17 +505,30 @@ export async function updateDish(id: string, updates: any): Promise<any> {
     isFeatured: "is_featured",
     slug: "slug",
     category: "category_id",
+    categoryId: "category_id",
+    imageUrl: "image_url",
+    ingredients: "ingredients",
+    allergens: "allergens",
+    dietary: "dietary",
+    preparationTime: "preparation_time",
+    costPrice: "cost_price",
+    pointsValue: "points_value",
+    displayOrder: "display_order",
   };
   for (const [key, col] of Object.entries(map)) {
     if (updates[key] !== undefined) {
       sets.push(`${col} = ?`);
-      params.push(
-        key === "isAvailable" || key === "isFeatured"
-          ? updates[key]
-            ? 1
-            : 0
-          : updates[key]
-      );
+      if (key === "isAvailable" || key === "isFeatured") {
+        params.push(updates[key] ? 1 : 0);
+      } else if (
+        key === "ingredients" ||
+        key === "allergens" ||
+        key === "dietary"
+      ) {
+        params.push(JSON.stringify(updates[key] || []));
+      } else {
+        params.push(updates[key]);
+      }
     }
   }
   if (sets.length === 0) return null;
@@ -476,6 +543,187 @@ export async function updateDish(id: string, updates: any): Promise<any> {
 
 export async function deleteDish(id: string): Promise<boolean> {
   await getDB().prepare("DELETE FROM dishes WHERE id = ?").bind(id).run();
+  return true;
+}
+
+// ---- Menu Sets (named sets of dishes — tasting menus / combos) ----
+function decorateMenuSet(row: any, itemRows: any[]): any {
+  const set = {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    description: row.description,
+    price: row.price,
+    imageUrl: row.image_url,
+    isAvailable: row.is_available === 1,
+    isFeatured: row.is_featured === 1,
+    displayOrder: row.display_order,
+    createdAt: row.created_at,
+  };
+  const computed = itemRows.reduce(
+    (sum, e) => sum + (e.dish_price || 0) * (e.quantity || 1),
+    0
+  );
+  return {
+    ...set,
+    items: itemRows.map((e) => ({
+      dishId: e.dish_id,
+      name: e.dish_name,
+      quantity: e.quantity,
+      price: e.dish_price,
+      imageUrl: e.dish_image,
+      displayOrder: e.display_order,
+    })),
+    computedPrice: computed,
+    effectivePrice: set.price > 0 ? set.price : computed,
+  };
+}
+
+export async function listMenuSets(): Promise<any[]> {
+  const { results } = await getDB()
+    .prepare("SELECT * FROM menu_sets ORDER BY display_order ASC, name ASC")
+    .all<any>();
+  if (results.length === 0) return [];
+  // Attach item listings + computed prices.
+  const ids = results.map((s) => s.id);
+  const placeholders = ids.map(() => "?").join(",");
+  const { results: items } = await getDB()
+    .prepare(
+      `SELECT msi.menu_set_id, msi.quantity, msi.display_order, d.id as dish_id, d.name as dish_name,
+              d.price as dish_price, d.image_url as dish_image
+       FROM menu_set_items msi
+       JOIN dishes d ON d.id = msi.dish_id
+       WHERE msi.menu_set_id IN (${placeholders})
+       ORDER BY msi.display_order ASC`
+    )
+    .bind(...ids)
+    .all<any>();
+  const grouped: Record<string, any[]> = {};
+  for (const it of items) {
+    (grouped[it.menu_set_id] ||= []).push(it);
+  }
+  return results.map((s) => decorateMenuSet(s, grouped[s.id] || []));
+}
+
+export async function getMenuSetById(id: string): Promise<any | null> {
+  const row = await getDB()
+    .prepare("SELECT * FROM menu_sets WHERE id = ?")
+    .bind(id)
+    .first<any>();
+  if (!row) return null;
+  const { results: items } = await getDB()
+    .prepare(
+      `SELECT msi.quantity, msi.display_order, d.id as dish_id, d.name as dish_name,
+              d.price as dish_price, d.image_url as dish_image
+       FROM menu_set_items msi
+       JOIN dishes d ON d.id = msi.dish_id
+       WHERE msi.menu_set_id = ?
+       ORDER BY msi.display_order ASC`
+    )
+    .bind(id)
+    .all<any>();
+  return decorateMenuSet(row, items);
+}
+
+export async function createMenuSet(data: any): Promise<any> {
+  const id = data.id || `set-${Date.now()}`;
+  const slug = data.slug || slugify(data.name);
+  await getDB()
+    .prepare(
+      `INSERT INTO menu_sets (id, branch_id, name, slug, description, price, image_url, is_available, is_featured, display_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      id,
+      "default-branch",
+      data.name,
+      slug,
+      data.description || "",
+      parseInt(data.price) || 0,
+      data.imageUrl || "",
+      data.isAvailable === undefined ? 1 : data.isAvailable ? 1 : 0,
+      data.isFeatured === undefined ? 0 : data.isFeatured ? 1 : 0,
+      parseInt(data.displayOrder) || 0
+    )
+    .run();
+  await replaceMenuSetItems(id, data.items || []);
+  await notifyRealtime({ type: "menu" });
+  return getMenuSetById(id);
+}
+
+export async function updateMenuSet(id: string, updates: any): Promise<any> {
+  const current = await getDB()
+    .prepare("SELECT * FROM menu_sets WHERE id = ?")
+    .bind(id)
+    .first<any>();
+  if (!current) return null;
+  const sets: string[] = [];
+  const params: any[] = [];
+  const map: Record<string, string> = {
+    name: "name",
+    slug: "slug",
+    description: "description",
+    price: "price",
+    imageUrl: "image_url",
+    isAvailable: "is_available",
+    isFeatured: "is_featured",
+    displayOrder: "display_order",
+  };
+  for (const [key, col] of Object.entries(map)) {
+    if (updates[key] !== undefined) {
+      sets.push(`${col} = ?`);
+      params.push(
+        key === "isAvailable" || key === "isFeatured"
+          ? updates[key]
+            ? 1
+            : 0
+          : updates[key]
+      );
+    }
+  }
+  if (sets.length > 0) {
+    sets.push("updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')");
+    params.push(id);
+    await getDB()
+      .prepare(`UPDATE menu_sets SET ${sets.join(", ")} WHERE id = ?`)
+      .bind(...params)
+      .run();
+  }
+  if (updates.items !== undefined) {
+    await replaceMenuSetItems(id, updates.items);
+  }
+  await notifyRealtime({ type: "menu" });
+  return getMenuSetById(id);
+}
+
+async function replaceMenuSetItems(menuSetId: string, items: any[]): Promise<void> {
+  const db = getDB();
+  await db
+    .prepare("DELETE FROM menu_set_items WHERE menu_set_id = ?")
+    .bind(menuSetId)
+    .run();
+  if (items.length === 0) return;
+  await db.batch(
+    items.map((it: any, i: number) =>
+      db
+        .prepare(
+          `INSERT INTO menu_set_items (id, menu_set_id, dish_id, quantity, display_order)
+           VALUES (?, ?, ?, ?, ?)`
+        )
+        .bind(
+          `msi-${menuSetId}-${i}`,
+          menuSetId,
+          it.dishId,
+          parseInt(it.quantity) || 1,
+          i
+        )
+    )
+  );
+}
+
+export async function deleteMenuSet(id: string): Promise<boolean> {
+  await getDB().prepare("DELETE FROM menu_sets WHERE id = ?").bind(id).run();
+  await notifyRealtime({ type: "menu" });
   return true;
 }
 
@@ -582,8 +830,14 @@ async function nextTableNumber(): Promise<number> {
 
 // ---- Counters ----
 export async function nextCounter(name: string): Promise<number> {
+  // Self-seeding upsert: an unseeded counter (e.g. `receipt`) starts at 1 and
+  // increments atomically on every call — no separate seed row required.
   const row = await getDB()
-    .prepare("UPDATE counters SET value = value + 1 WHERE name = ? RETURNING value")
+    .prepare(
+      `INSERT INTO counters (name, value) VALUES (?, 1)
+       ON CONFLICT(name) DO UPDATE SET value = value + 1
+       RETURNING value`
+    )
     .bind(name)
     .first<any>();
   return row ? row.value : 1;
@@ -676,6 +930,8 @@ export async function createOrder(data: any): Promise<any> {
   const counter = await nextCounter("order");
   const id = data.id || `ord-${generateToken().slice(0, 8)}`;
   const orderNumber = data.orderNumber || `#${counter}`;
+  const requestedStatus = data.status || "pending";
+  const requestedPayment = data.paymentStatus || "pending";
   const validatedItems = (data.items || []).map((item: any, i: number) => ({
     id: item.id || `oi-${id}-${i}`,
     menuItemId: item.menuItemId || item.id || "dish-001",
@@ -703,21 +959,22 @@ export async function createOrder(data: any): Promise<any> {
     tableNumber: data.tableNumber,
     items: validatedItems.map((it: any) => ({
       ...it,
-      status: "pending",
+      // Completed POS sales are served immediately, so kitchen items reflect that.
+      status: requestedStatus === "completed" ? "served" : "pending",
     })),
     subtotal,
     tax,
     serviceCharge,
     total,
-    status: "pending",
-    paymentStatus: "pending",
+    status: requestedStatus,
+    paymentStatus: requestedPayment,
     specialInstructions: data.specialInstructions || "",
     createdAt: now,
     updatedAt: now,
   };
 
   const db = getDB();
-  await db.batch([
+  const statements = [
     db
       .prepare(
         `INSERT INTO orders (id, branch_id, order_number, user_id, table_number, subtotal, tax, service_charge, total, status, payment_status, special_instructions)
@@ -733,10 +990,32 @@ export async function createOrder(data: any): Promise<any> {
         tax,
         serviceCharge,
         total,
-        "pending",
-        "pending",
+        order.status,
+        order.paymentStatus,
         order.specialInstructions
       ),
+  ];
+
+  // Completed POS sales are takeaway-style: paid and done — no kitchen job.
+  if (order.status !== "completed") {
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO kitchen_orders (id, order_id, branch_id, order_number, table_number, priority, status, elapsed)
+           VALUES (?, ?, ?, ?, ?, ?, 'pending', 0)`
+        )
+        .bind(
+          `ko-${id}`,
+          id,
+          "default-branch",
+          orderNumber,
+          data.tableNumber || null,
+          data.priority || "normal"
+        )
+    );
+  }
+
+  statements.push(
     ...validatedItems.map((it: any) =>
       db
         .prepare(
@@ -753,10 +1032,12 @@ export async function createOrder(data: any): Promise<any> {
           JSON.stringify(it.variants),
           JSON.stringify(it.addons),
           it.specialInstructions,
-          "pending"
+          order.status === "completed" ? "served" : "pending"
         )
-    ),
-  ]);
+    )
+  );
+
+  await db.batch(statements);
 
   await notifyRealtime({ type: "orders" });
   return order;
@@ -782,16 +1063,52 @@ export async function getOrder(id: string): Promise<any | null> {
   return { ...order, items: items.results };
 }
 
+// Allowed order/kitchen status transitions. Mirrors the kitchen board UI so the
+// public PATCH /api/kitchen endpoint cannot write arbitrary statuses.
+export const KITCHEN_STATUS_FLOW: Record<string, string[]> = {
+  pending: ["accepted", "cancelled"],
+  accepted: ["preparing", "cancelled"],
+  preparing: ["plating", "cancelled"],
+  plating: ["ready", "served", "cancelled"],
+  ready: ["served", "cancelled"],
+  served: ["completed"],
+  completed: [],
+  cancelled: [],
+};
+
 export async function updateOrderStatus(
   id: string,
   status: string
 ): Promise<any> {
+  const current = await getDB()
+    .prepare("SELECT status FROM orders WHERE id = ?")
+    .bind(id)
+    .first<any>();
+  if (!current) return null;
+  const allowed = KITCHEN_STATUS_FLOW[current.status] || [];
+  if (!allowed.includes(status)) return null;
+
   const occurred = await getDB()
     .prepare(
       `UPDATE orders SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? RETURNING *`
     )
     .bind(status, id)
     .first<any>();
+
+  // Keep order item statuses in sync so per-item icons reflect kitchen progress.
+  const itemStatus =
+    status === "plating" || status === "ready"
+      ? "ready"
+      : status === "served" || status === "completed"
+      ? "served"
+      : null;
+  if (itemStatus) {
+    await getDB()
+      .prepare("UPDATE order_items SET status = ? WHERE order_id = ?")
+      .bind(itemStatus, id)
+      .run();
+  }
+
   await getDB()
     .prepare(
       `UPDATE kitchen_orders SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE order_id = ?`
@@ -843,9 +1160,7 @@ export async function listKitchenOrders(): Promise<any[]> {
   const ids = orders.map((o) => o.order_id);
   const placeholders = ids.map(() => "?").join(",");
   const { results: items } = await getDB()
-    .prepare(
-      `SELECT * FROM order_items WHERE order_id IN (${placeholders}) AND status != 'served' AND status != 'completed' AND status != 'cancelled'`
-    )
+    .prepare(`SELECT * FROM order_items WHERE order_id IN (${placeholders})`)
     .bind(...ids)
     .all<any>();
   const grouped: Record<string, any[]> = {};
@@ -858,7 +1173,12 @@ export async function listKitchenOrders(): Promise<any[]> {
     tableNumber: o.table_number,
     priority: o.priority,
     status: o.status,
-    elapsed: o.elapsed,
+    // Compute elapsed from created_at so refetches resume from a real baseline
+    // instead of resetting to the stored counter.
+    elapsed: Math.max(
+      0,
+      Math.floor((Date.now() - new Date(o.created_at).getTime()) / 1000)
+    ),
     createdAt: o.created_at,
     items: grouped[o.order_id] || [],
   }));
@@ -1186,7 +1506,7 @@ async function ensureSupplyStatus(id: string): Promise<void> {
 // ---- Analytics ----
 export async function getAnalytics(): Promise<any> {
   const today = new Date().toISOString().slice(0, 10);
-  const [resRows, orderRows, kitchenRow, revenueRow, recentOrders, coversRow] =
+  const [resRows, orderRows, kitchenRow, revenueRow, recentOrders, coversRow, receiptsRow] =
     await Promise.all([
       getDB()
         .prepare("SELECT COUNT(*) as c FROM reservations WHERE date = ?")
@@ -1209,6 +1529,10 @@ export async function getAnalytics(): Promise<any> {
       getDB()
         .prepare("SELECT COALESCE(SUM(capacity), 0) as s FROM tables WHERE status = 'seated'")
         .first<any>(),
+      getDB()
+        .prepare("SELECT COUNT(*) as c FROM receipts WHERE created_at >= ?")
+        .bind(today + "T00:00:00")
+        .first<any>(),
     ]);
 
   // Weekly revenue from daily_sales
@@ -1226,6 +1550,7 @@ export async function getAnalytics(): Promise<any> {
   return {
     todayReservations: resRows?.c || 0,
     todayOrders: orderRows?.c || 0,
+    todayReceipts: receiptsRow?.c || 0,
     currentCovers: coversRow?.s || 0,
     kitchenQueue: kitchenRow?.c || 0,
     revenue: revenueRow?.s || 0,
@@ -1236,6 +1561,372 @@ export async function getAnalytics(): Promise<any> {
       orders: d.orders,
     })),
     weeklyRevenue,
+  };
+}
+
+// ---- Receipts (POS — E-receipts & physical receipts) ----
+export async function createReceipt(data: any): Promise<any> {
+  const counter = await nextCounter("receipt");
+  const year = new Date().getFullYear();
+  const receiptNo =
+    data.receiptNo || `R-${year}-${String(counter).padStart(4, "0")}`;
+  const id = data.id || `rec-${generateToken().slice(0, 8)}`;
+  await getDB()
+    .prepare(
+      `INSERT INTO receipts (id, branch_id, receipt_no, order_id, order_number, customer_name, table_number, subtotal, tax, service_charge, total, payment_method, receipt_type, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      id,
+      "default-branch",
+      receiptNo,
+      data.orderId || null,
+      data.orderNumber || "",
+      data.customerName || "Guest",
+      data.tableNumber || null,
+      parseInt(data.subtotal) || 0,
+      parseInt(data.tax) || 0,
+      parseInt(data.serviceCharge) || 0,
+      parseInt(data.total) || 0,
+      data.paymentMethod || "cash",
+      data.receiptType || "e",
+      data.createdBy || ""
+    )
+    .run();
+  await notifyRealtime({ type: "receipts" });
+  return getReceipt(id);
+}
+
+/**
+ * POS checkout — one atomic D1 batch: paid+completed order, its items, and the
+ * receipt. If any statement fails nothing is written (no orphaned paid orders).
+ * Completed sales skip the kitchen queue (no `kitchen_orders` row, items are
+ * `served` immediately) and the receipt number is generated from the `receipt`
+ * counter inside the same call as the batch (self-seeding via nextCounter).
+ */
+export async function createPaidSale(data: any): Promise<{
+  order: any;
+  receipt: any;
+}> {
+  const counter = await nextCounter("order");
+  const id = data.id || `ord-${generateToken().slice(0, 8)}`;
+  const orderNumber = data.orderNumber || `#${counter}`;
+  const validatedItems = (data.items || []).map((item: any, i: number) => ({
+    id: item.id || `oi-${id}-${i}`,
+    menuItemId: item.menuItemId || item.id || "dish-001",
+    name: item.name || "Unknown",
+    quantity: Math.max(1, parseInt(item.quantity) || 1),
+    price: Math.max(0, parseInt(item.price) || 0),
+    variants: item.variants || [],
+    addons: item.addons || [],
+    specialInstructions: item.specialInstructions || "",
+  }));
+
+  const subtotal = validatedItems.reduce(
+    (s: number, it: any) => s + it.price * it.quantity,
+    0
+  );
+  const tax = Math.round(subtotal * 0.1);
+  const serviceCharge = Math.round(subtotal * 0.05);
+  const total = subtotal + tax + serviceCharge;
+  const now = new Date().toISOString();
+
+  const order = {
+    id,
+    orderNumber,
+    tableId: data.tableId,
+    tableNumber: data.tableNumber || null,
+    items: validatedItems.map((it: any) => ({ ...it, status: "served" })),
+    subtotal,
+    tax,
+    serviceCharge,
+    total,
+    status: "completed",
+    paymentStatus: "paid",
+    specialInstructions: data.specialInstructions || "",
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const receiptCounter = await nextCounter("receipt");
+  const year = new Date().getFullYear();
+  const receiptId = data.receiptId || `rec-${generateToken().slice(0, 8)}`;
+  const receipt = {
+    id: receiptId,
+    receiptNo: `R-${year}-${String(receiptCounter).padStart(4, "0")}`,
+    orderId: id,
+    orderNumber,
+    customerName: data.customerName || "Guest",
+    tableNumber: data.tableNumber || null,
+    subtotal,
+    tax,
+    serviceCharge,
+    total,
+    paymentMethod: data.paymentMethod || "cash",
+    receiptType: data.receiptType || "e",
+    createdBy: data.createdBy || "",
+    items: validatedItems.map((it: any) => ({
+      id: it.id,
+      name: it.name,
+      quantity: it.quantity,
+      price: it.price,
+      variants: it.variants,
+      addons: it.addons,
+    })),
+    createdAt: now,
+  };
+
+  const db = getDB();
+  const statements = [
+    db
+      .prepare(
+        `INSERT INTO orders (id, branch_id, order_number, user_id, table_number, subtotal, tax, service_charge, total, status, payment_status, special_instructions)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(
+        id,
+        "default-branch",
+        orderNumber,
+        data.userId || null,
+        order.tableNumber,
+        subtotal,
+        tax,
+        serviceCharge,
+        total,
+        "completed",
+        "paid",
+        order.specialInstructions
+      ),
+    ...validatedItems.map((it: any) =>
+      db
+        .prepare(
+          `INSERT INTO order_items (id, order_id, menu_item_id, name, quantity, price, variants, addons, special_instructions, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .bind(
+          it.id,
+          id,
+          it.menuItemId,
+          it.name,
+          it.quantity,
+          it.price,
+          JSON.stringify(it.variants),
+          JSON.stringify(it.addons),
+          it.specialInstructions,
+          "served"
+        )
+    ),
+    db
+      .prepare(
+        `INSERT INTO receipts (id, branch_id, receipt_no, order_id, order_number, customer_name, table_number, subtotal, tax, service_charge, total, payment_method, receipt_type, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(
+        receipt.id,
+        "default-branch",
+        receipt.receiptNo,
+        order.id,
+        order.orderNumber,
+        receipt.customerName,
+        order.tableNumber,
+        subtotal,
+        tax,
+        serviceCharge,
+        total,
+        receipt.paymentMethod,
+        receipt.receiptType,
+        receipt.createdBy
+      ),
+  ];
+
+  await db.batch(statements);
+  await notifyRealtime({ type: "orders" });
+  await notifyRealtime({ type: "receipts" });
+  return { order, receipt };
+}
+
+export async function getReceipt(id: string): Promise<any | null> {
+  const row = await getDB()
+    .prepare("SELECT * FROM receipts WHERE id = ?")
+    .bind(id)
+    .first<any>();
+  if (!row) return null;
+  let items: any[] = [];
+  if (row.order_id) {
+    const { results } = await getDB()
+      .prepare("SELECT * FROM order_items WHERE order_id = ?")
+      .bind(row.order_id)
+      .all<any>();
+    items = results.map((it: any) => ({
+      id: it.id,
+      name: it.name,
+      quantity: it.quantity,
+      price: it.price,
+      variants: safeJson(it.variants),
+      addons: safeJson(it.addons),
+    }));
+  }
+  return {
+    id: row.id,
+    receiptNo: row.receipt_no,
+    orderId: row.order_id,
+    orderNumber: row.order_number,
+    customerName: row.customer_name,
+    tableNumber: row.table_number,
+    subtotal: row.subtotal,
+    tax: row.tax,
+    serviceCharge: row.service_charge,
+    total: row.total,
+    paymentMethod: row.payment_method,
+    receiptType: row.receipt_type,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    items,
+  };
+}
+
+export async function listReceipts(
+  opts: { limit?: number; from?: string } = {}
+): Promise<any[]> {
+  const limit = opts.limit || 100;
+  let sql = "SELECT * FROM receipts";
+  const params: any[] = [];
+  if (opts.from) {
+    sql += " WHERE created_at >= ?";
+    params.push(opts.from);
+  }
+  sql += " ORDER BY created_at DESC LIMIT ?";
+  params.push(limit);
+  const { results } = await getDB().prepare(sql).bind(...params).all<any>();
+  return results.map((r: any) => ({
+    id: r.id,
+    receiptNo: r.receipt_no,
+    orderId: r.order_id,
+    orderNumber: r.order_number,
+    customerName: r.customer_name,
+    tableNumber: r.table_number,
+    total: r.total,
+    paymentMethod: r.payment_method,
+    receiptType: r.receipt_type,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+  }));
+}
+
+// ---- Sales report (revenue + receipts by day / week / month) ----
+export type SalesPeriod = "daily" | "weekly" | "monthly";
+
+// Buckets use the UTC date portion of stored timestamps (all writes are UTC ISO).
+function salesBucketKey(dateStr: string, period: SalesPeriod): string {
+  const day = dateStr.slice(0, 10);
+  const [y, m, d] = day.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (period === "daily") return day;
+  if (period === "weekly") {
+    const dow = dt.getUTCDay();
+    const diff = (dow + 6) % 7; // days since Monday
+    return new Date(Date.UTC(y, m - 1, d - diff)).toISOString().slice(0, 10);
+  }
+  return day.slice(0, 7); // YYYY-MM
+}
+
+const SALES_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const SALES_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function salesLabel(key: string, period: SalesPeriod): string {
+  const [y, m, d] = key.split("-").map(Number);
+  if (period === "daily") {
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    return `${SALES_DAYS[dt.getUTCDay()]} ${d}`;
+  }
+  if (period === "weekly") {
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    return `${SALES_MONTHS[dt.getUTCMonth()]} ${d}`;
+  }
+  return SALES_MONTHS[m - 1];
+}
+
+function buildSalesBuckets(period: SalesPeriod): string[] {
+  const keys: string[] = [];
+  const now = new Date();
+  const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  if (period === "daily") {
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(todayUTC.getTime() - i * 86400000);
+      keys.push(d.toISOString().slice(0, 10));
+    }
+    return keys;
+  }
+  if (period === "weekly") {
+    const dow = todayUTC.getUTCDay();
+    const thisMonday = new Date(todayUTC.getTime() - ((dow + 6) % 7) * 86400000);
+    for (let i = 3; i >= 0; i--) {
+      const d = new Date(thisMonday.getTime() - i * 7 * 86400000);
+      keys.push(d.toISOString().slice(0, 10));
+    }
+    return keys;
+  }
+  // monthly — last 6 months including current
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    keys.push(d.toISOString().slice(0, 7));
+  }
+  return keys;
+}
+
+export async function getSalesReport(period: SalesPeriod = "daily"): Promise<any> {
+  const buckets = buildSalesBuckets(period);
+  const firstKey = buckets[0];
+  const fromPrefix = period === "monthly" ? firstKey : firstKey;
+
+  const [receipts, paidOrders] = await Promise.all([
+    getDB()
+      .prepare("SELECT created_at, total FROM receipts WHERE created_at >= ?")
+      .bind(fromPrefix)
+      .all<any>(),
+    getDB()
+      .prepare("SELECT created_at, total, payment_status FROM orders WHERE created_at >= ? AND payment_status = 'paid'")
+      .bind(fromPrefix)
+      .all<any>(),
+  ]);
+
+  const bucketMap: Record<string, { revenue: number; receipts: number; orders: number }> = {};
+  for (const key of buckets) {
+    bucketMap[key] = { revenue: 0, receipts: 0, orders: 0 };
+  }
+  const rows = receipts.results || [];
+  for (const r of rows) {
+    const key = salesBucketKey(r.created_at, period);
+    if (bucketMap[key]) {
+      bucketMap[key].revenue += r.total || 0;
+      bucketMap[key].receipts += 1;
+    }
+  }
+  const orderRows = paidOrders.results || [];
+  for (const o of orderRows) {
+    const key = salesBucketKey(o.created_at, period);
+    if (bucketMap[key]) bucketMap[key].orders += 1;
+  }
+
+  const data = buckets.map((key) => ({
+    key,
+    label: salesLabel(key, period),
+    ...bucketMap[key],
+  }));
+
+  const revenue = data.reduce((s, b) => s + b.revenue, 0);
+  const receiptCount = data.reduce((s, b) => s + b.receipts, 0);
+  const orders = data.reduce((s, b) => s + b.orders, 0);
+  return {
+    period,
+    buckets: data,
+    totals: {
+      revenue,
+      receipts: receiptCount,
+      orders,
+      averageRevenue: data.length ? Math.round(revenue / data.length) : 0,
+      averageReceipts: data.length ? +(receiptCount / data.length).toFixed(1) : 0,
+    },
   };
 }
 

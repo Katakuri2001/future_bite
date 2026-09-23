@@ -185,12 +185,14 @@ export default function KitchenBoard() {
   const servedOrders = orders.filter(
     (o) => o.status === "served" || o.status === "completed"
   );
+  const cancelledOrders = orders.filter((o) => o.status === "cancelled");
 
   const columns = [
     { title: "NEW", orders: newOrders, color: "text-warning" },
     { title: "PREPARING", orders: preparingOrders, color: "text-gold" },
     { title: "READY", orders: readyOrders, color: "text-success" },
     { title: "SERVED", orders: servedOrders, color: "text-ivory-dim" },
+    { title: "CANCELLED", orders: cancelledOrders, color: "text-error" },
   ];
 
   return (
@@ -221,7 +223,7 @@ export default function KitchenBoard() {
       </div>
 
       {/* Columns */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         {columns.map((col) => (
           <div key={col.title}>
             <div className="flex items-center justify-between mb-4">

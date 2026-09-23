@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS users (
   first_name TEXT NOT NULL,
   last_name TEXT NOT NULL,
   name TEXT NOT NULL,  -- display name: first_name + last_name
-  role TEXT NOT NULL DEFAULT 'customer',  -- admin|manager|kitchen|waiter|host|customer
+  role TEXT NOT NULL DEFAULT 'customer',  -- admin|manager|kitchen|waiter|host|cashier|customer
   phone TEXT,
   is_active INTEGER DEFAULT 1,
   points INTEGER DEFAULT 0,
@@ -219,7 +219,7 @@ CREATE TABLE IF NOT EXISTS staff (
   user_id TEXT,  -- linked to users table
   name TEXT NOT NULL,
   email TEXT NOT NULL,
-  role TEXT NOT NULL,  -- admin|manager|kitchen|waiter|host
+  role TEXT NOT NULL,  -- admin|manager|kitchen|waiter|host|cashier
   phone TEXT,
   is_active INTEGER DEFAULT 1,
   shift TEXT,
@@ -310,3 +310,66 @@ CREATE TABLE IF NOT EXISTS daily_sales (
   updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   UNIQUE(branch_id, date)
 );
+
+-- =============================================
+-- RECEIPTS (POS — E-receipts & physical receipts)
+-- A receipt is created at POS checkout and is the source of truth for
+-- revenue + receipt counts in the admin dashboard (daily/weekly/monthly).
+-- =============================================
+CREATE TABLE IF NOT EXISTS receipts (
+  id TEXT PRIMARY KEY,
+  branch_id TEXT NOT NULL DEFAULT 'default-branch',
+  receipt_no TEXT UNIQUE NOT NULL,
+  order_id TEXT,
+  order_number TEXT,
+  customer_name TEXT,
+  table_number INTEGER,
+  subtotal INTEGER NOT NULL DEFAULT 0,
+  tax INTEGER NOT NULL DEFAULT 0,
+  service_charge INTEGER NOT NULL DEFAULT 0,
+  total INTEGER NOT NULL DEFAULT 0,
+  payment_method TEXT DEFAULT 'cash',  -- cash|card|qr
+  receipt_type TEXT DEFAULT 'e',       -- e|physical
+  created_by TEXT,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (branch_id) REFERENCES branches(id),
+  FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_receipts_created ON receipts(created_at);
+CREATE INDEX IF NOT EXISTS idx_receipts_branch ON receipts(branch_id);
+CREATE INDEX IF NOT EXISTS idx_receipts_order ON receipts(order_id);
+
+-- =============================================
+-- MENU SETS (named sets of dishes — tasting menus / combos)
+-- =============================================
+CREATE TABLE IF NOT EXISTS menu_sets (
+  id TEXT PRIMARY KEY,
+  branch_id TEXT NOT NULL DEFAULT 'default-branch',
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL,
+  description TEXT,
+  price INTEGER NOT NULL DEFAULT 0,  -- 0 = computed from set items
+  image_url TEXT,
+  is_available INTEGER DEFAULT 1,
+  is_featured INTEGER DEFAULT 0,
+  display_order INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (branch_id) REFERENCES branches(id)
+);
+CREATE INDEX IF NOT EXISTS idx_menu_sets_branch ON menu_sets(branch_id);
+
+-- =============================================
+-- MENU SET ITEMS (dishes inside a menu set)
+-- =============================================
+CREATE TABLE IF NOT EXISTS menu_set_items (
+  id TEXT PRIMARY KEY,
+  menu_set_id TEXT NOT NULL,
+  dish_id TEXT NOT NULL,
+  quantity INTEGER DEFAULT 1,
+  display_order INTEGER DEFAULT 0,
+  FOREIGN KEY (menu_set_id) REFERENCES menu_sets(id) ON DELETE CASCADE,
+  FOREIGN KEY (dish_id) REFERENCES dishes(id)
+);
+CREATE INDEX IF NOT EXISTS idx_menu_set_items_set ON menu_set_items(menu_set_id);
+CREATE INDEX IF NOT EXISTS idx_menu_set_items_dish ON menu_set_items(dish_id);

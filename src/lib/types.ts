@@ -162,7 +162,7 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: "customer" | "admin" | "manager" | "kitchen" | "waiter" | "host";
+  role: "customer" | "admin" | "manager" | "kitchen" | "waiter" | "host" | "cashier";
   phone?: string;
   createdAt: string;
 }
@@ -221,10 +221,84 @@ export interface StaffMember {
   id: string;
   name: string;
   email: string;
-  role: "admin" | "manager" | "kitchen" | "waiter" | "host";
+  role: "admin" | "manager" | "kitchen" | "waiter" | "host" | "cashier";
   phone: string;
   isActive: boolean;
   shift?: string;
+}
+
+export interface Receipt {
+  id: string;
+  receiptNo: string;
+  orderId: string | null;
+  orderNumber: string;
+  customerName: string;
+  tableNumber: number | null;
+  subtotal: number;
+  tax: number;
+  serviceCharge: number;
+  total: number;
+  paymentMethod: "cash" | "card" | "qr";
+  receiptType: "e" | "physical";
+  createdBy: string;
+  createdAt: string;
+  items: ReceiptItem[];
+}
+
+export interface ReceiptItem {
+  id: string;
+  name: string;
+  quantity: number;
+  price: number;
+  variants?: string[];
+  addons?: { name: string; price: number }[];
+}
+
+export type SalesPeriod = "daily" | "weekly" | "monthly";
+
+export interface MenuSetItem {
+  dishId: string;
+  name: string;
+  quantity: number;
+  price: number;
+  imageUrl?: string;
+  displayOrder: number;
+}
+
+export interface MenuSet {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  price: number;
+  imageUrl: string;
+  isAvailable: boolean;
+  isFeatured: boolean;
+  displayOrder: number;
+  items: MenuSetItem[];
+  computedPrice: number;
+  effectivePrice: number;
+  createdAt: string;
+}
+
+export interface SalesBucket {
+  key: string;
+  label: string;
+  revenue: number;
+  receipts: number;
+  orders: number;
+}
+
+export interface SalesReport {
+  period: "daily" | "weekly" | "monthly";
+  buckets: SalesBucket[];
+  totals: {
+    revenue: number;
+    receipts: number;
+    orders: number;
+    averageRevenue: number;
+    averageReceipts: number;
+  };
 }
 
 export interface Testimonial {
