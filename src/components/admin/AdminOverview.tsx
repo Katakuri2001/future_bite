@@ -4,12 +4,14 @@ import { useState, useEffect } from "react";
 import {
   CalendarDays,
   ShoppingBag,
+  Receipt,
   Users,
   TrendingUp,
   ChefHat,
   Clock,
 } from "lucide-react";
 import { formatPrice } from "@/lib/utils";
+import SalesPanel from "@/components/admin/SalesPanel";
 
 interface PopularDish {
   name: string;
@@ -19,6 +21,7 @@ interface PopularDish {
 interface AnalyticsStats {
   todayReservations: number;
   todayOrders: number;
+  todayReceipts: number;
   currentCovers: number;
   kitchenQueue: number;
   revenue: number;
@@ -42,6 +45,7 @@ export default function AdminOverview() {
   const defaultStats = {
     todayReservations: 12,
     todayOrders: 47,
+    todayReceipts: 0,
     currentCovers: 28,
     kitchenQueue: 3,
     revenue: 2850000,
@@ -61,10 +65,10 @@ export default function AdminOverview() {
   const statItems = [
     { label: "Today's Reservations", value: data.todayReservations, icon: CalendarDays, color: "text-gold" },
     { label: "Today's Orders", value: data.todayOrders, icon: ShoppingBag, color: "text-ivory" },
+    { label: "Receipts Today", value: data.todayReceipts ?? 0, icon: Receipt, color: "text-gold" },
     { label: "Current Covers", value: data.currentCovers, icon: Users, color: "text-ivory" },
     { label: "Kitchen Queue", value: data.kitchenQueue, icon: ChefHat, color: "text-warning" },
     { label: "Revenue", value: formatPrice(data.revenue), icon: TrendingUp, color: "text-success" },
-    { label: "Avg. Order Value", value: formatPrice(data.averageOrderValue), icon: TrendingUp, color: "text-ivory" },
   ];
 
   return (
@@ -99,6 +103,8 @@ export default function AdminOverview() {
           );
         })}
       </div>
+
+      <SalesPanel className="mb-8" />
 
       <div className="bg-surface border border-border/50 p-6 mb-8">
         <h3 className="text-sm font-medium text-ivory mb-4">Occupancy</h3>

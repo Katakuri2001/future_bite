@@ -2,23 +2,19 @@
 
 import { useEffect, useState } from "react";
 import AdminLayout from "@/components/admin/AdminLayout";
+import SalesPanel from "@/components/admin/SalesPanel";
 import { formatPrice } from "@/lib/utils";
-
-interface WeeklyRevenue {
-  day: string;
-  revenue: number;
-}
 
 interface AnalyticsData {
   todayReservations: number;
   todayOrders: number;
+  todayReceipts: number;
   currentCovers: number;
   kitchenQueue: number;
   revenue: number;
   averageOrderValue: number;
   occupancy: number;
   popularDishes: { name: string; orders: number }[];
-  weeklyRevenue: WeeklyRevenue[];
 }
 
 export default function AdminAnalyticsPage() {
@@ -33,67 +29,76 @@ export default function AdminAnalyticsPage() {
       .catch(() => {});
   }, []);
 
-  const fallback: AnalyticsData = {
-    todayReservations: 12,
-    todayOrders: 47,
-    currentCovers: 28,
-    kitchenQueue: 3,
-    revenue: 2850000,
-    averageOrderValue: 60600,
-    occupancy: 78,
+  const stats: AnalyticsData = data || {
+    todayReservations: 0,
+    todayOrders: 0,
+    todayReceipts: 0,
+    currentCovers: 0,
+    kitchenQueue: 0,
+    revenue: 0,
+    averageOrderValue: 0,
+    occupancy: 0,
     popularDishes: [],
-    weeklyRevenue: [
-      { day: "Mon", revenue: 1850000 },
-      { day: "Tue", revenue: 2100000 },
-      { day: "Wed", revenue: 1950000 },
-      { day: "Thu", revenue: 2300000 },
-      { day: "Fri", revenue: 2850000 },
-      { day: "Sat", revenue: 3200000 },
-      { day: "Sun", revenue: 2400000 },
-    ],
   };
-
-  const stats = data || fallback;
-  const maxRevenue = Math.max(...stats.weeklyRevenue.map((d) => d.revenue));
 
   return (
     <AdminLayout>
       <div>
         <h1 className="text-xl font-bold text-ivory mb-6">Analytics</h1>
 
-        <div className="bg-surface border border-border/50 p-6 mb-8">
-          <h3 className="text-sm font-medium text-ivory mb-6">Weekly Revenue</h3>
-          <div className="flex items-end gap-3 h-48">
-            {stats.weeklyRevenue.map((d) => (
-              <div key={d.day} className="flex-1 flex flex-col items-center gap-2">
-                <span className="text-ivory-dim text-[10px]">{formatPrice(d.revenue)}</span>
-                <div
-                  className="w-full bg-gradient-to-t from-gold to-gold-muted transition-all duration-1000"
-                  style={{ height: `${(d.revenue / maxRevenue) * 100}%` }}
-                />
-                <span className="text-ivory-dim text-xs">{d.day}</span>
-              </div>
-            ))}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+          <div className="bg-surface border border-border/50 p-4">
+            <p className="text-ivory-dim text-[10px] uppercase tracking-wider mb-2">Reservations Today</p>
+            <p className="text-2xl font-bold text-ivory">{stats.todayReservations}</p>
+          </div>
+          <div className="bg-surface border border-border/50 p-4">
+            <p className="text-ivory-dim text-[10px] uppercase tracking-wider mb-2">Orders Today</p>
+            <p className="text-2xl font-bold text-ivory">{stats.todayOrders}</p>
+          </div>
+          <div className="bg-surface border border-border/50 p-4">
+            <p className="text-ivory-dim text-[10px] uppercase tracking-wider mb-2">Receipts Today</p>
+            <p className="text-2xl font-bold text-gold">{stats.todayReceipts ?? 0}</p>
+          </div>
+          <div className="bg-surface border border-border/50 p-4">
+            <p className="text-ivory-dim text-[10px] uppercase tracking-wider mb-2">Kitchen Queue</p>
+            <p className="text-2xl font-bold text-warning">{stats.kitchenQueue}</p>
+          </div>
+          <div className="bg-surface border border-border/50 p-4">
+            <p className="text-ivory-dim text-[10px] uppercase tracking-wider mb-2">Revenue Today</p>
+            <p className="text-2xl font-bold text-success">{formatPrice(stats.revenue)}</p>
+          </div>
+          <div className="bg-surface border border-border/50 p-4">
+            <p className="text-ivory-dim text-[10px] uppercase tracking-wider mb-2">Occupancy</p>
+            <p className="text-2xl font-bold text-ivory">{stats.occupancy}%</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-surface border border-border/50 p-5">
-            <p className="text-ivory-dim text-xs mb-2">Total Revenue (Week)</p>
-            <p className="text-2xl font-bold text-ivory">
-              {formatPrice(stats.weeklyRevenue.reduce((a, b) => a + b.revenue, 0))}
-            </p>
+        <SalesPanel className="mb-8" />
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="bg-surface border border-border/50 p-6">
+            <h3 className="text-sm font-medium text-ivory mb-4">Popular Dishes</h3>
+            <div className="space-y-3">
+              {(stats.popularDishes || []).map((dish, i) => (
+                <div key={dish.name} className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-ivory-dim text-xs w-5">{i + 1}.</span>
+                    <span className="text-ivory text-sm">{dish.name}</span>
+                  </div>
+                  <span className="text-ivory-dim text-sm">{dish.orders} orders</span>
+                </div>
+              ))}
+              {(stats.popularDishes || []).length === 0 && (
+                <p className="text-ivory-dim text-sm">No orders yet.</p>
+              )}
+            </div>
           </div>
-          <div className="bg-surface border border-border/50 p-5">
-            <p className="text-ivory-dim text-xs mb-2">Avg. Daily Revenue</p>
-            <p className="text-2xl font-bold text-ivory">
-              {formatPrice(Math.round(stats.weeklyRevenue.reduce((a, b) => a + b.revenue, 0) / 7))}
-            </p>
-          </div>
-          <div className="bg-surface border border-border/50 p-5">
-            <p className="text-ivory-dim text-xs mb-2">Best Day</p>
-            <p className="text-2xl font-bold text-ivory">
-              {stats.weeklyRevenue.reduce((best, d) => d.revenue > best.revenue ? d : best).day}
+
+          <div className="bg-surface border border-border/50 p-6">
+            <h3 className="text-sm font-medium text-ivory mb-4">Average Order Value</h3>
+            <p className="text-3xl font-bold text-gold">{formatPrice(stats.averageOrderValue)}</p>
+            <p className="text-ivory-dim text-xs mt-2">
+              Across all orders today, excluding cancelled.
             </p>
           </div>
         </div>
