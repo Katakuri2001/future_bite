@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listOrders, createOrder } from "@/lib/db";
+import { requireAdmin } from "@/lib/auth";
 
 function elapsed(createdAt: string | undefined): string {
   if (!createdAt) return "";
@@ -12,7 +13,9 @@ function elapsed(createdAt: string | undefined): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if (auth instanceof NextResponse) return auth;
   const orders = (await listOrders()).map((order: any) => ({
     id: order.orderNumber.replace("#", ""),
     table: order.tableNumber,
@@ -29,6 +32,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if (auth instanceof NextResponse) return auth;
   const body = await request.json();
   if (body?.items && Array.isArray(body.items) && body.items.length > 0) {
     const order = await createOrder(body);

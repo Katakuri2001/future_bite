@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import { cn } from "@/lib/utils";
 import { Menu, X } from "lucide-react";
+import type { UserRole } from "@/lib/db";
 
 export default function AdminLayout({
   children,
@@ -14,6 +15,7 @@ export default function AdminLayout({
   const router = useRouter();
   const pathname = usePathname();
   const [authorized, setAuthorized] = useState(false);
+  const [role, setRole] = useState<UserRole | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -23,9 +25,37 @@ export default function AdminLayout({
     const token = localStorage.getItem("token");
     if (!token) {
       router.push("/login");
-    } else {
-      queueMicrotask(() => setAuthorized(true));
+      return;
     }
+
+    let cancelled = false;
+    // Verify the server-side session and fetch the real role (the httpOnly
+    // cookie is sent automatically). Previously this only checked that a
+    // token existed in localStorage.
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/me");
+        const data = await res.json();
+        if (cancelled) return;
+        if (res.ok && data?.data?.user) {
+          setRole(data.data.user.role);
+          setAuthorized(true);
+        } else {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          router.push("/login");
+        }
+      } catch {
+        if (cancelled) return;
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        router.push("/login");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   useEffect(() => {
@@ -71,6 +101,7 @@ export default function AdminLayout({
       )}
 
       <AdminSidebar 
+        role={role}
         className={cn(
           "z-50 lg:relative flex-shrink-0",
           sidebarOpen && "lg:hidden fixed inset-y-0 left-0 animate-slide-in-left"

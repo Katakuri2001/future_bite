@@ -7,8 +7,11 @@ import {
   adjustSupplyStock,
   listSupplyTransactions,
 } from "@/lib/db";
+import { requireAdmin } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if (auth instanceof NextResponse) return auth;
   const [data, transactions] = await Promise.all([
     listSupplies(),
     listSupplyTransactions(),
@@ -17,12 +20,16 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if (auth instanceof NextResponse) return auth;
   const body = await request.json();
   const item = await createSupply(body);
   return NextResponse.json({ success: true, data: item });
 }
 
 export async function PUT(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if (auth instanceof NextResponse) return auth;
   const { id, ...updates } = await request.json();
   const updated = await updateSupply(id, updates);
   if (!updated) {
@@ -35,6 +42,8 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if (auth instanceof NextResponse) return auth;
   const body = await request.json();
   const { id, delta, type, notes, createdBy } = body;
   if (!id || delta === undefined) {
@@ -60,6 +69,8 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if (auth instanceof NextResponse) return auth;
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   if (id) {

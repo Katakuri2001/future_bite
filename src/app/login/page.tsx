@@ -29,7 +29,16 @@ export default function LoginPage() {
       if (data.success) {
         localStorage.setItem("token", data.data.token);
         localStorage.setItem("user", JSON.stringify(data.data.user));
-        router.push("/admin");
+        const role: string | undefined = data.data.user?.role;
+        if (role === "kitchen") {
+          router.push("/kitchen");
+        } else if (role === "cashier") {
+          router.push("/pos");
+        } else if (role === "admin" || role === "manager") {
+          router.push("/admin");
+        } else {
+          router.push("/");
+        }
       } else {
         setError(data.error || "Login failed");
       }
@@ -114,12 +123,13 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center text-ivory-dim text-xs mt-6">
-          Demo credentials do not grant admin access. Demo accounts:
+          Demo accounts — staff roles route to their area after sign-in:
         </p>
         <div className="mt-3 bg-bg border border-border/30 p-4 text-xs text-ivory-dim space-y-1 font-mono">
           <p><span className="text-gold">admin</span>    admin@futurebite.com / admin123</p>
           <p><span className="text-gold">manager</span>  manager@futurebite.com / manager123</p>
           <p><span className="text-gold">kitchen</span>  kitchen@futurebite.com / kitchen123</p>
+          <p><span className="text-gold">cashier</span>  cashier@futurebite.com / cashier123</p>
           <p><span className="text-gold">guest</span>    customer@futurebite.com / guest123</p>
         </div>
       </motion.div>

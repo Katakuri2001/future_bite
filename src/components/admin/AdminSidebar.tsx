@@ -14,27 +14,41 @@ import {
   Package,
   Users,
   BarChart3,
+  CreditCard,
   Settings,
   LogOut,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { UserRole } from "@/lib/db";
 
-const navItems = [
-  { href: "/admin", label: "Overview", icon: LayoutDashboard },
-  { href: "/admin/reservations", label: "Reservations", icon: CalendarDays },
-  { href: "/admin/floor-plan", label: "Floor Plan", icon: Map },
-  { href: "/admin/kitchen", label: "Kitchen", icon: ChefHat },
-  { href: "/admin/orders", label: "Orders", icon: ShoppingBag },
-  { href: "/admin/menu", label: "Menu", icon: UtensilsCrossed },
-  { href: "/admin/inventory", label: "Inventory", icon: Package },
-  { href: "/admin/staff", label: "Staff", icon: Users },
-  { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/admin/settings", label: "Settings", icon: Settings },
+const navItems: {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ size?: number; strokeWidth?: number }>;
+  roles: UserRole[];
+}[] = [
+  { href: "/admin", label: "Overview", icon: LayoutDashboard, roles: ["admin", "manager"] },
+  { href: "/admin/reservations", label: "Reservations", icon: CalendarDays, roles: ["admin", "manager"] },
+  { href: "/admin/floor-plan", label: "Floor Plan", icon: Map, roles: ["admin", "manager"] },
+  { href: "/admin/kitchen", label: "Kitchen", icon: ChefHat, roles: ["admin", "manager", "kitchen"] },
+  { href: "/admin/orders", label: "Orders", icon: ShoppingBag, roles: ["admin", "manager"] },
+  { href: "/admin/menu", label: "Menu", icon: UtensilsCrossed, roles: ["admin", "manager"] },
+  { href: "/admin/inventory", label: "Inventory", icon: Package, roles: ["admin", "manager"] },
+  { href: "/admin/staff", label: "Staff", icon: Users, roles: ["admin"] },
+  { href: "/admin/analytics", label: "Analytics", icon: BarChart3, roles: ["admin", "manager"] },
+  { href: "/pos", label: "POS", icon: CreditCard, roles: ["admin", "manager"] },
+  { href: "/admin/settings", label: "Settings", icon: Settings, roles: ["admin"] },
 ];
 
-export default function AdminSidebar({ className }: { className?: string }) {
+export default function AdminSidebar({
+  className,
+  role,
+}: {
+  className?: string;
+  role?: UserRole | null;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -54,11 +68,22 @@ export default function AdminSidebar({ className }: { className?: string }) {
     localStorage.setItem("sidebar-collapsed", JSON.stringify(newState));
   };
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    try {
+      // Invalidate the server session and clear the httpOnly cookie —
+      // otherwise the proxy would keep letting the stale cookie through.
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      /* ignore */
+    }
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     router.push("/login");
   };
+
+  const visibleItems = role
+    ? navItems.filter((item) => item.roles.includes(role))
+    : navItems;
 
   if (!mounted) {
     return (
@@ -112,7 +137,7 @@ export default function AdminSidebar({ className }: { className?: string }) {
 
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto" aria-label="Admin navigation">
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const Icon = item.icon;
           const isActive =
             pathname === item.href ||

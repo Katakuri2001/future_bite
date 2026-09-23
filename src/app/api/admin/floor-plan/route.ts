@@ -6,8 +6,11 @@ import {
   updateTable,
   deleteTable,
 } from "@/lib/db";
+import { requireAdmin } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if (auth instanceof NextResponse) return auth;
   const [tables, reservations] = await Promise.all([
     listTables(),
     listReservations(),
@@ -47,12 +50,16 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if (auth instanceof NextResponse) return auth;
   const body = await request.json();
   const table = await createTable(body);
   return NextResponse.json({ success: true, data: table });
 }
 
 export async function PUT(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if (auth instanceof NextResponse) return auth;
   const { id, ...updates } = await request.json();
   const updated = await updateTable(id, updates);
   if (!updated) {
@@ -65,6 +72,8 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if (auth instanceof NextResponse) return auth;
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   if (id) {

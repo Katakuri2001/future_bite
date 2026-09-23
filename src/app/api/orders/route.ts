@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createOrder, listOrders } from "@/lib/db";
+import { requireSession, requireStaff } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
+  const auth = await requireSession(request);
+  if (auth instanceof NextResponse) return auth;
   const body = await request.json();
   const { tableId, tableNumber, items, specialInstructions } = body;
 
@@ -40,7 +43,9 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireStaff(request);
+  if (auth instanceof NextResponse) return auth;
   const orders = await listOrders();
 
   return NextResponse.json({ success: true, data: orders });
