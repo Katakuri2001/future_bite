@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Package, Plus, X, Minus, History } from "lucide-react";
+import { Package, Plus, X, Minus, History, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Ingredient {
@@ -30,6 +30,17 @@ const statusColors: Record<string, string> = {
   critical: "bg-error/20 text-error",
 };
 
+const unitOptions = ["kg", "g", "L", "ml", "pcs", "btl", "dozen", "pack"];
+
+const emptyAddForm = {
+  name: "",
+  unit: "kg",
+  currentStock: "",
+  minimumStock: "0",
+  cost: "",
+  supplier: "",
+};
+
 export default function KitchenIngredients() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
@@ -39,6 +50,9 @@ export default function KitchenIngredients() {
   const [notes, setNotes] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [addForm, setAddForm] = useState(emptyAddForm);
+  const [adding, setAdding] = useState(false);
 
   const fetchAll = () => {
     fetch("/api/kitchen/ingredients")
@@ -85,6 +99,35 @@ export default function KitchenIngredients() {
     setBusy(false);
   };
 
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addForm.name.trim()) return;
+    setAdding(true);
+    try {
+      const res = await fetch("/api/kitchen/ingredients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: addForm.name.trim(),
+          unit: addForm.unit,
+          currentStock: parseFloat(addForm.currentStock) || 0,
+          minimumStock: parseFloat(addForm.minimumStock) || 0,
+          cost: parseFloat(addForm.cost) || 0,
+          supplier: addForm.supplier.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShowAdd(false);
+        setAddForm(emptyAddForm);
+        fetchAll();
+      }
+    } catch {
+      /* ignore */
+    }
+    setAdding(false);
+  };
+
   const criticalCount = ingredients.filter((i) => i.status === "critical").length;
 
   return (
@@ -107,6 +150,13 @@ export default function KitchenIngredients() {
               {criticalCount} critical
             </span>
           )}
+          <button
+            onClick={() => setShowAdd(true)}
+            className="btn-primary text-[10px] uppercase tracking-wider px-3 py-1.5 flex items-center gap-1.5"
+          >
+            <Plus size={12} />
+            Add Ingredient
+          </button>
           <button
             onClick={() => setShowHistory((v) => !v)}
             className={cn(
@@ -303,6 +353,108 @@ export default function KitchenIngredients() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {showAdd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <form onSubmit={handleAdd} className="bg-surface border border-border/50 w-full max-w-md">
+            <div className="flex items-center justify-between p-5 border-b border-border/50">
+              <h2 className="text-sm font-bold text-ivory uppercase tracking-[0.15em]">
+                Add Ingredient
+              </h2>
+              <button type="button" onClick={() => setShowAdd(false)} className="text-ivory-dim hover:text-ivory p-1" aria-label="Close">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-[10px] tracking-[0.15em] uppercase text-ivory-dim mb-1.5">
+                  Ingredient Name
+                </label>
+                <input
+                  type="text"
+                  value={addForm.name}
+                  onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
+                  className="w-full bg-bg border border-border-light text-ivory px-3 py-2.5 text-sm focus:border-gold focus:outline-none"
+                  placeholder="Fresh Truffle"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] tracking-[0.15em] uppercase text-ivory-dim mb-1.5">Unit</label>
+                  <select
+                    value={addForm.unit}
+                    onChange={(e) => setAddForm({ ...addForm, unit: e.target.value })}
+                    className="w-full bg-bg border border-border-light text-ivory px-3 py-2.5 text-sm focus:border-gold focus:outline-none"
+                  >
+                    {unitOptions.map((u) => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] tracking-[0.15em] uppercase text-ivory-dim mb-1.5">Opening Stock</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min={0}
+                    value={addForm.currentStock}
+                    onChange={(e) => setAddForm({ ...addForm, currentStock: e.target.value })}
+                    className="w-full bg-bg border border-border-light text-ivory px-3 py-2.5 text-sm focus:border-gold focus:outline-none"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] tracking-[0.15em] uppercase text-ivory-dim mb-1.5">Min. Stock</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min={0}
+                    value={addForm.minimumStock}
+                    onChange={(e) => setAddForm({ ...addForm, minimumStock: e.target.value })}
+                    className="w-full bg-bg border border-border-light text-ivory px-3 py-2.5 text-sm focus:border-gold focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] tracking-[0.15em] uppercase text-ivory-dim mb-1.5">Cost / Unit</label>
+                  <input
+                    type="number"
+                    step="any"
+                    min={0}
+                    value={addForm.cost}
+                    onChange={(e) => setAddForm({ ...addForm, cost: e.target.value })}
+                    className="w-full bg-bg border border-border-light text-ivory px-3 py-2.5 text-sm focus:border-gold focus:outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] tracking-[0.15em] uppercase text-ivory-dim mb-1.5">Supplier</label>
+                <input
+                  type="text"
+                  value={addForm.supplier}
+                  onChange={(e) => setAddForm({ ...addForm, supplier: e.target.value })}
+                  className="w-full bg-bg border border-border-light text-ivory px-3 py-2.5 text-sm focus:border-gold focus:outline-none"
+                  placeholder="Premium Meats Co."
+                />
+              </div>
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAdd(false)}
+                  className="text-xs text-ivory-dim hover:text-ivory transition-colors uppercase tracking-[0.15em]"
+                >
+                  Cancel
+                </button>
+                <button type="submit" disabled={adding} className="btn-primary text-xs py-2.5 px-6 disabled:opacity-50 flex items-center gap-2">
+                  {adding && <Loader2 size={12} className="animate-spin" />}
+                  {adding ? "Saving..." : "Add Ingredient"}
+                </button>
+              </div>
+            </div>
+          </form>
         </div>
       )}
     </div>
