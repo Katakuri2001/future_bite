@@ -1,0 +1,21 @@
+name = "futurebite-realtime"
+main = "src/index.ts"
+compatibility_date = "2026-09-14"
+compatibility_flags = ["nodejs_compat"]
+
+[[durable_objects.bindings]]
+name = "ORDER_MANAGER"
+class_name = "OrderManager"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["OrderManager"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "futurebite-db"
+database_id = "dc46baaa-fa18-4d1f-83f7-2408dbc29e5c"
+
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "4a91cf6d032946a9a88ec05601f1d7f0"

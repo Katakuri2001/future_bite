@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { Instagram, Facebook, Twitter } from "lucide-react";
 
 const footerLinks = {
@@ -30,9 +31,13 @@ export default function Footer() {
           {/* Brand */}
           <div className="lg:col-span-2">
             <Link href="/" className="inline-block mb-6">
-              <span className="text-display text-2xl tracking-wide text-ivory">
-                FutureBite
-              </span>
+              <Image
+                src="/future_bite_logo.jpeg"
+                alt="FutureBite"
+                width={110}
+                height={60}
+                className="h-10 w-auto object-contain"
+              />
             </Link>
             <p className="text-ivory-muted text-sm leading-relaxed max-w-sm mb-6">
               An extraordinary dining experience where precision, atmosphere,

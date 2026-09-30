@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { motion } from "framer-motion";
-import { Mail, Lock, ChefHat, AlertCircle } from "lucide-react";
+import { Mail, Lock, AlertCircle } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -28,7 +29,16 @@ export default function LoginPage() {
       if (data.success) {
         localStorage.setItem("token", data.data.token);
         localStorage.setItem("user", JSON.stringify(data.data.user));
-        router.push("/admin");
+        const role: string | undefined = data.data.user?.role;
+        if (role === "kitchen") {
+          router.push("/kitchen");
+        } else if (role === "cashier") {
+          router.push("/pos");
+        } else if (role === "admin" || role === "manager") {
+          router.push("/admin");
+        } else {
+          router.push("/");
+        }
       } else {
         setError(data.error || "Login failed");
       }
@@ -48,11 +58,14 @@ export default function LoginPage() {
       >
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-3 mb-4">
-            <ChefHat size={32} className="text-gold" />
-            <span className="text-display text-3xl text-ivory">FutureBite</span>
-          </div>
-          <p className="text-ivory-dim text-sm">Admin Sign In</p>
+          <Image
+            src="/future_bite_logo.jpeg"
+            alt="FutureBite"
+            width={176}
+            height={96}
+            className="h-12 w-auto object-contain mx-auto mb-4"
+          />
+        <p className="text-ivory-dim text-sm">Admin Sign In</p>
         </div>
 
         {/* Form */}
@@ -110,13 +123,14 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center text-ivory-dim text-xs mt-6">
-          Demo credentials do not grant admin access. Demo accounts:
+          Demo accounts — staff roles route to their area after sign-in:
         </p>
         <div className="mt-3 bg-bg border border-border/30 p-4 text-xs text-ivory-dim space-y-1 font-mono">
           <p><span className="text-gold">admin</span>    admin@futurebite.com / admin123</p>
           <p><span className="text-gold">manager</span>  manager@futurebite.com / manager123</p>
           <p><span className="text-gold">kitchen</span>  kitchen@futurebite.com / kitchen123</p>
-          <p><span className="text-gold">guest</span>    guest@futurebite.com / guest123</p>
+          <p><span className="text-gold">cashier</span>  cashier@futurebite.com / cashier123</p>
+          <p><span className="text-gold">guest</span>    customer@futurebite.com / guest123</p>
         </div>
       </motion.div>
     </div>
