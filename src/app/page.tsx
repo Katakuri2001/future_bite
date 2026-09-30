@@ -9,7 +9,6 @@ import Gallery from "@/components/marketing/Gallery";
 import Testimonials from "@/components/marketing/Testimonials";
 import Location from "@/components/marketing/Location";
 import FinalCTA from "@/components/marketing/FinalCTA";
-import ReceiptsPage from "@/app/receipts/page";
 import Footer from "@/components/marketing/Footer";
 import MotionProvider from "@/components/motion/MotionProvider";
 import { MotionSection } from "@/components/motion";
@@ -40,9 +39,6 @@ export default function HomePage() {
         </MotionSection>
         <MotionSection>
           <Testimonials />
-        </MotionSection>
-        <MotionSection>
-          <ReceiptsPage />
         </MotionSection>
         <MotionSection>
           <Location />

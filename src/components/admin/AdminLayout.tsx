@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import { cn } from "@/lib/utils";
+import { useSidebarCollapsed } from "@/lib/useSidebarCollapsed";
 import { Menu, X } from "lucide-react";
 import type { UserRole } from "@/lib/db";
 
@@ -16,12 +17,10 @@ export default function AdminLayout({
   const pathname = usePathname();
   const [authorized, setAuthorized] = useState(false);
   const [role, setRole] = useState<UserRole | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const [isCollapsed, toggleCollapsed] = useSidebarCollapsed();
 
   useEffect(() => {
-    setMounted(true);
     const token = localStorage.getItem("token");
     if (!token) {
       router.push("/login");
@@ -58,34 +57,15 @@ export default function AdminLayout({
     };
   }, [router]);
 
-  useEffect(() => {
-    if (!mounted) return;
-    const saved = localStorage.getItem("sidebar-collapsed");
-    if (saved !== null) {
-      setSidebarCollapsed(JSON.parse(saved));
-    }
-  }, [mounted]);
+  // Close the mobile drawer when the route changes. Adjusting state during
+  // render is the recommended alternative to a setState-in-effect.
+  const [lastPathname, setLastPathname] = useState(pathname);
+  if (pathname !== lastPathname) {
+    setLastPathname(pathname);
+    if (sidebarOpen) setSidebarOpen(false);
+  }
 
-  // Listen for sidebar toggle events
-  useEffect(() => {
-    if (!mounted) return;
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "sidebar-collapsed" && e.newValue !== null) {
-        setSidebarCollapsed(JSON.parse(e.newValue));
-      }
-    };
-    window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
-  }, [mounted]);
-
-  // Close mobile sidebar on route change
-  useEffect(() => {
-    if (window.innerWidth < 1024) {
-      setSidebarOpen(false);
-    }
-  }, [pathname]);
-
-  if (!authorized || !mounted) {
+  if (!authorized) {
     return null;
   }
 
@@ -100,12 +80,15 @@ export default function AdminLayout({
         />
       )}
 
-      <AdminSidebar 
+      <AdminSidebar
         role={role}
+        isCollapsed={isCollapsed}
+        onToggle={toggleCollapsed}
+        onNavigate={() => setSidebarOpen(false)}
         className={cn(
           "z-50 lg:relative flex-shrink-0",
           sidebarOpen && "lg:hidden fixed inset-y-0 left-0 animate-slide-in-left"
-        )} 
+        )}
       />
 
       {/* Mobile menu toggle button */}
@@ -120,7 +103,7 @@ export default function AdminLayout({
 
       <main className={cn(
         "flex-1 min-w-0 overflow-auto transition-all duration-300 ease-in-out lg:transition-none",
-        sidebarCollapsed ? "lg:ml-16" : "lg:ml-60"
+        isCollapsed ? "lg:ml-16" : "lg:ml-60"
       )}>
         <div className="p-4 lg:p-6">
           {/* Mobile close button inside sidebar area */}

@@ -92,6 +92,13 @@ export async function requireCashier(
   return requireAuth(request, ["cashier"]);
 }
 
+/** Receipt register — owners (admin), managers and cashiers. */
+export async function requireReceipts(
+  request: NextRequest
+): Promise<AuthResult> {
+  return requireAuth(request, ["admin", "manager", "cashier"]);
+}
+
 /** Staff-level data (e.g. order listing) — all staff roles except customers. */
 export async function requireStaff(
   request: NextRequest
