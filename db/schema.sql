@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS users (
   phone TEXT,
   is_active INTEGER DEFAULT 1,
   points INTEGER DEFAULT 0,
+  total_spent INTEGER DEFAULT 0,  -- lifetime spend in currency units
   last_login_at TEXT,
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
@@ -338,6 +339,41 @@ CREATE TABLE IF NOT EXISTS receipts (
 CREATE INDEX IF NOT EXISTS idx_receipts_created ON receipts(created_at);
 CREATE INDEX IF NOT EXISTS idx_receipts_branch ON receipts(branch_id);
 CREATE INDEX IF NOT EXISTS idx_receipts_order ON receipts(order_id);
+
+-- =============================================
+-- COUPONS (auto-generated from points milestones)
+-- =============================================
+CREATE TABLE IF NOT EXISTS coupons (
+  id TEXT PRIMARY KEY,
+  branch_id TEXT NOT NULL DEFAULT 'default-branch',
+  user_id TEXT NOT NULL,
+  code TEXT UNIQUE NOT NULL,
+  amount INTEGER NOT NULL DEFAULT 1000,  -- in currency units (e.g. 10.00 USD)
+  is_used INTEGER DEFAULT 0,
+  expires_at TEXT,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (branch_id) REFERENCES branches(id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_coupons_user ON coupons(user_id);
+CREATE INDEX IF NOT EXISTS idx_coupons_code ON coupons(code);
+
+-- =============================================
+-- LOYALTY EVENTS (audit trail for points & coupons)
+-- =============================================
+CREATE TABLE IF NOT EXISTS loyalty_events (
+  id TEXT PRIMARY KEY,
+  branch_id TEXT NOT NULL DEFAULT 'default-branch',
+  user_id TEXT NOT NULL,
+  order_id TEXT,
+  points_earned INTEGER DEFAULT 0,
+  coupon_code TEXT,
+  reason TEXT,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (branch_id) REFERENCES branches(id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_loyalty_user ON loyalty_events(user_id);
 
 -- =============================================
 -- MENU SETS (named sets of dishes — tasting menus / combos)

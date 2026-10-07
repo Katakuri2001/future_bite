@@ -19,6 +19,7 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  Award,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebarCollapsed } from "@/lib/useSidebarCollapsed";
@@ -38,6 +39,7 @@ const navItems: {
   { href: "/admin/menu", label: "Menu", icon: UtensilsCrossed, roles: ["admin", "manager"] },
   { href: "/admin/inventory", label: "Inventory", icon: Package, roles: ["admin", "manager"] },
   { href: "/admin/staff", label: "Staff", icon: Users, roles: ["admin"] },
+  { href: "/admin/royal-customers", label: "Royal Customers", icon: Award, roles: ["admin", "manager"] },
   { href: "/admin/analytics", label: "Analytics", icon: BarChart3, roles: ["admin", "manager"] },
   { href: "/pos", label: "POS", icon: CreditCard, roles: ["admin", "manager", "cashier"] },
   { href: "/receipts", label: "Receipts", icon: Receipt, roles: ["admin", "manager", "cashier"] },

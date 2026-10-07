@@ -3,30 +3,33 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Mail, Lock, Eye, EyeOff, ArrowRight, Shield, AlertCircle } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, ArrowRight, User, AlertCircle } from "lucide-react";
 
-export default function LoginPage() {
+export default function RegisterPage() {
   const router = useRouter();
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<{ name?: string; email?: string; password?: string; confirmPassword?: string }>({});
   const [loading, setLoading] = useState(false);
 
   function validate() {
     const errs: typeof fieldErrors = {};
-    if (!email.trim()) {
-      errs.email = "Email is required";
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      errs.email = "Enter a valid email address";
-    }
-    if (!password) {
-      errs.password = "Password is required";
-    } else if (password.length < 6) {
-      errs.password = "Password must be at least 6 characters";
-    }
+    if (!name.trim()) errs.name = "Name is required";
+    else if (name.trim().length < 2) errs.name = "Name must be at least 2 characters";
+
+    if (!email.trim()) errs.email = "Email is required";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = "Enter a valid email address";
+
+    if (!password) errs.password = "Password is required";
+    else if (password.length < 6) errs.password = "Password must be at least 6 characters";
+
+    if (!confirmPassword) errs.confirmPassword = "Please confirm your password";
+    else if (password !== confirmPassword) errs.confirmPassword = "Passwords do not match";
+
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -38,10 +41,10 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, rememberMe }),
+        body: JSON.stringify({ name, email, password }),
       });
       const data = await res.json();
       if (data.success) {
@@ -61,7 +64,7 @@ export default function LoginPage() {
           router.push("/");
         }
       } else {
-        setError(data.error || "Login failed");
+        setError(data.error || "Registration failed");
       }
     } catch {
       setError("Connection error");
@@ -77,17 +80,17 @@ export default function LoginPage() {
         <div className="relative z-10 flex flex-col justify-between p-16">
           <div>
             <img src="/future_bite_logo.jpeg" alt="FutureBite" className="h-10 w-auto object-contain mb-8" />
-            <p className="text-label mb-4">Enterprise Access</p>
-            <h1 className="text-display-lg text-ivory max-w-md">Dining,<br />Reimagined.</h1>
+            <p className="text-label mb-4">Join FutureBite</p>
+            <h1 className="text-display-lg text-ivory max-w-md">Create your<br />enterprise account.</h1>
           </div>
           <div className="space-y-4">
             <div className="flex items-center gap-3 text-ivory-dim text-sm">
-              <Shield size={16} className="text-gold" />
-              <span>Enterprise-grade security & encryption</span>
+              <div className="w-1 h-1 rounded-full bg-gold" />
+              <span>Access across all branches & devices</span>
             </div>
             <div className="flex items-center gap-3 text-ivory-dim text-sm">
               <div className="w-1 h-1 rounded-full bg-gold" />
-              <span>Multi-branch support & role-based access</span>
+              <span>Secure, encrypted, role-based access</span>
             </div>
           </div>
         </div>
@@ -101,9 +104,9 @@ export default function LoginPage() {
           className="w-full max-w-md"
         >
           <div className="mb-8">
-            <p className="text-label mb-3">Welcome Back</p>
-            <h2 className="text-display-md text-ivory">Sign in to your account</h2>
-            <p className="text-ivory-muted text-sm mt-2">Enter your credentials to access reservations, orders, and loyalty rewards.</p>
+            <p className="text-label mb-3">Get Started</p>
+            <h2 className="text-display-md text-ivory">Create your account</h2>
+            <p className="text-ivory-muted text-sm mt-2">Sign up to unlock reservations, orders, and loyalty rewards.</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5" noValidate>
@@ -113,6 +116,21 @@ export default function LoginPage() {
                 {error}
               </div>
             )}
+
+            <div>
+              <label className="block text-xs tracking-[0.1em] uppercase text-ivory-dim mb-2">Full Name</label>
+              <div className="relative">
+                <User size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-ivory-dim" />
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => { setName(e.target.value); setFieldErrors((p) => ({ ...p, name: undefined })); }}
+                  className={`w-full bg-bg border text-ivory pl-11 pr-4 py-4 text-sm focus:outline-none transition-colors ${fieldErrors.name ? "border-error" : "border-border-light focus:border-gold"}`}
+                  placeholder="John Doe"
+                />
+              </div>
+              {fieldErrors.name && <p className="text-error text-xs mt-1">{fieldErrors.name}</p>}
+            </div>
 
             <div>
               <label className="block text-xs tracking-[0.1em] uppercase text-ivory-dim mb-2">Email Address</label>
@@ -147,22 +165,34 @@ export default function LoginPage() {
               {fieldErrors.password && <p className="text-error text-xs mt-1">{fieldErrors.password}</p>}
             </div>
 
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-ivory-dim text-xs cursor-pointer">
-                <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="rounded border-border-light bg-bg text-gold focus:ring-gold" />
-                Remember me
-              </label>
-              <a href="#" className="text-gold text-xs hover:text-ivory-dim transition-colors">Forgot password?</a>
+            <div>
+              <label className="block text-xs tracking-[0.1em] uppercase text-ivory-dim mb-2">Confirm Password</label>
+              <div className="relative">
+                <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-ivory-dim" />
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={(e) => { setConfirmPassword(e.target.value); setFieldErrors((p) => ({ ...p, confirmPassword: undefined })); }}
+                  className={`w-full bg-bg border text-ivory pl-11 pr-4 py-4 text-sm focus:outline-none transition-colors ${fieldErrors.confirmPassword ? "border-error" : "border-border-light focus:border-gold"}`}
+                  placeholder="••••••••"
+                />
+              </div>
+              {fieldErrors.confirmPassword && <p className="text-error text-xs mt-1">{fieldErrors.confirmPassword}</p>}
             </div>
 
+            <label className="flex items-start gap-2 text-ivory-dim text-xs cursor-pointer">
+              <input type="checkbox" required className="mt-0.5 rounded border-border-light bg-bg text-gold focus:ring-gold" />
+              <span>I agree to the Terms of Service and Privacy Policy</span>
+            </label>
+
             <button type="submit" disabled={loading} className="btn-primary w-full text-sm py-4 disabled:opacity-50">
-              {loading ? "Signing in..." : "Sign In"}
+              {loading ? "Creating account..." : "Create Account"}
               {!loading && <ArrowRight size={16} />}
             </button>
           </form>
 
           <div className="mt-6 text-center">
-            <p className="text-ivory-dim text-xs">New to FutureBite?{" "}<a href="/register" className="text-gold hover:text-ivory-dim transition-colors">Create an account</a></p>
+            <p className="text-ivory-dim text-xs">Already have an account?{" "}<a href="/login" className="text-gold hover:text-ivory-dim transition-colors">Sign in</a></p>
           </div>
 
           <div className="mt-4 text-center">

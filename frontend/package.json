@@ -27,8 +27,7 @@
     "react-hot-toast": "^2.4.1",
     "react-hook-form": "^7.48.2",
     "@hookform/resolvers": "^3.3.2",
-    "qrcode": "^1.5.3",
-    "react-qr-reader": "^3.0.0-rc2"
+    "qrcode": "^1.5.3"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",

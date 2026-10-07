@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Mail, Lock, Eye, EyeOff, ArrowRight, Shield, AlertCircle } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, ArrowRight, Shield } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,31 +12,13 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
   const [loading, setLoading] = useState(false);
-
-  function validate() {
-    const errs: typeof fieldErrors = {};
-    if (!email.trim()) {
-      errs.email = "Email is required";
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      errs.email = "Enter a valid email address";
-    }
-    if (!password) {
-      errs.password = "Password is required";
-    } else if (password.length < 6) {
-      errs.password = "Password must be at least 6 characters";
-    }
-    setFieldErrors(errs);
-    return Object.keys(errs).length === 0;
-  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (!validate()) return;
-
     setLoading(true);
+
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
@@ -44,22 +26,11 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password, rememberMe }),
       });
       const data = await res.json();
+
       if (data.success) {
         localStorage.setItem("token", data.data.token);
         localStorage.setItem("user", JSON.stringify(data.data.user));
-
-        // Role-based redirect
-        const role = data.data.user?.role;
-        if (role === "admin" || role === "manager") {
-          router.push("/admin");
-        } else if (role === "kitchen") {
-          router.push("/kitchen");
-        } else if (role === "cashier") {
-          router.push("/pos");
-        } else {
-          // customer, waiter, host → stay on main page with account logged in
-          router.push("/");
-        }
+        router.push("/account");
       } else {
         setError(data.error || "Login failed");
       }
@@ -71,6 +42,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-bg flex">
+      {/* Left side — branding */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-surface to-bg" />
         <div className="absolute inset-0 opacity-30" style={{ backgroundImage: "radial-gradient(circle at 2px 2px, rgba(201,169,110,0.15) 1px, transparent 0)", backgroundSize: "40px 40px" }} />
@@ -93,6 +65,7 @@ export default function LoginPage() {
         </div>
       </div>
 
+      {/* Right side — form */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-6 lg:p-16">
         <motion.div
           initial={{ opacity: 0, x: 20 }}
@@ -106,10 +79,9 @@ export default function LoginPage() {
             <p className="text-ivory-muted text-sm mt-2">Enter your credentials to access reservations, orders, and loyalty rewards.</p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+          <form onSubmit={handleSubmit} className="space-y-5">
             {error && (
-              <div className="p-3 bg-error/10 border border-error/30 text-error text-sm flex items-start gap-2">
-                <AlertCircle size={16} className="mt-0.5 shrink-0" />
+              <div className="p-3 bg-error/10 border border-error/30 text-error text-sm">
                 {error}
               </div>
             )}
@@ -121,12 +93,12 @@ export default function LoginPage() {
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => { setEmail(e.target.value); setFieldErrors((p) => ({ ...p, email: undefined })); }}
-                  className={`w-full bg-bg border text-ivory pl-11 pr-4 py-4 text-sm focus:outline-none transition-colors ${fieldErrors.email ? "border-error" : "border-border-light focus:border-gold"}`}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-bg border border-border-light text-ivory pl-11 pr-4 py-4 text-sm focus:border-gold focus:outline-none transition-colors"
                   placeholder="you@futurebite.com"
+                  required
                 />
               </div>
-              {fieldErrors.email && <p className="text-error text-xs mt-1">{fieldErrors.email}</p>}
             </div>
 
             <div>
@@ -136,20 +108,29 @@ export default function LoginPage() {
                 <input
                   type={showPassword ? "text" : "password"}
                   value={password}
-                  onChange={(e) => { setPassword(e.target.value); setFieldErrors((p) => ({ ...p, password: undefined })); }}
-                  className={`w-full bg-bg border text-ivory pl-11 pr-12 py-4 text-sm focus:outline-none transition-colors ${fieldErrors.password ? "border-error" : "border-border-light focus:border-gold"}`}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-bg border border-border-light text-ivory pl-11 pr-12 py-4 text-sm focus:border-gold focus:outline-none transition-colors"
                   placeholder="••••••••"
+                  required
                 />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-ivory-dim hover:text-ivory transition-colors">
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-ivory-dim hover:text-ivory transition-colors"
+                >
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
-              {fieldErrors.password && <p className="text-error text-xs mt-1">{fieldErrors.password}</p>}
             </div>
 
             <div className="flex items-center justify-between">
               <label className="flex items-center gap-2 text-ivory-dim text-xs cursor-pointer">
-                <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="rounded border-border-light bg-bg text-gold focus:ring-gold" />
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="rounded border-border-light bg-bg text-gold focus:ring-gold"
+                />
                 Remember me
               </label>
               <a href="#" className="text-gold text-xs hover:text-ivory-dim transition-colors">Forgot password?</a>
@@ -162,7 +143,10 @@ export default function LoginPage() {
           </form>
 
           <div className="mt-6 text-center">
-            <p className="text-ivory-dim text-xs">New to FutureBite?{" "}<a href="/register" className="text-gold hover:text-ivory-dim transition-colors">Create an account</a></p>
+            <p className="text-ivory-dim text-xs">
+              New to FutureBite?{" "}
+              <a href="/register" className="text-gold hover:text-ivory-dim transition-colors">Create an account</a>
+            </p>
           </div>
 
           <div className="mt-4 text-center">

@@ -1039,8 +1039,112 @@ export async function createOrder(data: any): Promise<any> {
 
   await db.batch(statements);
 
+  // Loyalty: award points for every $10 spent
+  await awardLoyaltyPoints(data.userId, order.total, id);
+
   await notifyRealtime({ type: "orders" });
   return order;
+}
+
+// ---- Loyalty / Royal Points ----
+export async function awardLoyaltyPoints(userId: string | undefined, orderTotal: number, orderId: string): Promise<void> {
+  if (!userId) return;
+  const pointsEarned = Math.floor(orderTotal / 1000); // $10 = 1000 cents → 1 point
+  if (pointsEarned <= 0) return;
+
+  const db = getDB();
+  await db
+    .prepare("UPDATE users SET points = points + ?, total_spent = total_spent + ? WHERE id = ?")
+    .bind(pointsEarned, orderTotal, userId)
+    .run();
+
+  await db
+    .prepare(
+      "INSERT INTO loyalty_events (id, branch_id, user_id, order_id, points_earned, reason) VALUES (?, ?, ?, ?, ?, ?)"
+    )
+    .bind(
+      `loy-${Date.now()}`,
+      "default-branch",
+      userId,
+      orderId,
+      pointsEarned,
+      `Earned ${pointsEarned} pts from order ${orderId}`
+    )
+    .run();
+
+  // Check if user qualifies for a $10 coupon (every 100 points)
+  const user = await db
+    .prepare("SELECT points FROM users WHERE id = ?")
+    .bind(userId)
+    .first<any>();
+  if (user && user.points >= 100) {
+    const couponsOwed = Math.floor(user.points / 100);
+    // Count existing coupons for this user
+    const { results: existing } = await db
+      .prepare("SELECT COUNT(*) as c FROM coupons WHERE user_id = ?")
+      .bind(userId)
+      .all<any>();
+    const owed = couponsOwed - (existing[0]?.c || 0);
+    for (let i = 0; i < owed; i++) {
+      const code = `ROYAL-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+      await db
+        .prepare(
+          "INSERT INTO coupons (id, branch_id, user_id, code, amount, is_used) VALUES (?, ?, ?, ?, ?, 0)"
+        )
+        .bind(`cpn-${Date.now()}-${i}`, "default-branch", userId, code, 1000)
+        .run();
+      await db
+        .prepare(
+          "INSERT INTO loyalty_events (id, branch_id, user_id, order_id, points_earned, coupon_code, reason) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(
+          `loy-cpn-${Date.now()}-${i}`,
+          "default-branch",
+          userId,
+          orderId,
+          0,
+          code,
+          `Coupon awarded: 100 points milestone`
+        )
+        .run();
+    }
+  }
+}
+
+export async function getRoyalCustomers(filters?: { minSpend?: number; minPoints?: number; search?: string }): Promise<any[]> {
+  let sql = `
+    SELECT u.id, u.email, u.name, u.role, u.points, u.total_spent, u.created_at,
+           (SELECT COUNT(*) FROM coupons c WHERE c.user_id = u.id) as coupon_count,
+           (SELECT COALESCE(SUM(o.total), 0) FROM orders o WHERE o.user_id = u.id AND o.payment_status = 'paid') as verified_spent
+    FROM users u
+    WHERE u.role = 'customer' AND u.is_active = 1
+  `;
+  const params: any[] = [];
+  if (filters?.minSpend) {
+    sql += " AND total_spent >= ?";
+    params.push(filters.minSpend);
+  }
+  if (filters?.minPoints) {
+    sql += " AND points >= ?";
+    params.push(filters.minPoints);
+  }
+  if (filters?.search) {
+    sql += " AND (name LIKE ? OR email LIKE ?)";
+    params.push(`%${filters.search}%`, `%${filters.search}%`);
+  }
+  sql += " ORDER BY points DESC, total_spent DESC";
+  const { results } = await getDB().prepare(sql).bind(...params).all<any>();
+  return results.map((r: any) => ({
+    id: r.id,
+    name: r.name,
+    email: r.email,
+    points: r.points,
+    totalSpent: r.total_spent,
+    verifiedSpent: r.verified_spent,
+    couponCount: r.coupon_count,
+    tier: r.points >= 500 ? "Diamond" : r.points >= 200 ? "Gold" : r.points >= 100 ? "Silver" : "Bronze",
+    createdAt: r.created_at,
+  }));
 }
 
 export async function listOrders(): Promise<any[]> {
