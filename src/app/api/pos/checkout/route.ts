@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { createPaidSale, getDishesByIds } from "@/lib/db";
+import { createPaidSale, getDishesByIds, getDB } from "@/lib/db";
 import { requirePOS } from "@/lib/auth";
 
 const checkoutSchema = z.object({
@@ -19,6 +19,10 @@ const checkoutSchema = z.object({
     .min(1),
   tableNumber: z.number().int().positive().optional(),
   customerName: z.string().optional().default("Guest"),
+  /** Guest whose loyalty balance should accrue. Distinct from the cashier. */
+  customerId: z.string().optional(),
+  /** Coupon code the guest wants to spend. Validated against their wallet. */
+  couponCode: z.string().optional(),
   paymentMethod: z.enum(["cash", "card", "qr"]).default("cash"),
   receiptType: z.enum(["e", "physical"]).default("e"),
 });
@@ -48,8 +52,30 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { items, tableNumber, customerName, paymentMethod, receiptType } =
+  const { items, tableNumber, customerName, customerId, couponCode, paymentMethod, receiptType } =
     parsed.data;
+
+  // A coupon may only be spent by the guest it was issued to.
+  let couponOwner: string | null = null;
+  if (couponCode) {
+    if (!customerId) {
+      return NextResponse.json(
+        { success: false, error: "A customer must be selected to redeem a coupon" },
+        { status: 400 }
+      );
+    }
+    const owns = await getDB()
+      .prepare("SELECT 1 FROM coupons WHERE UPPER(code) = UPPER(?) AND user_id = ? AND is_used = 0 LIMIT 1")
+      .bind(couponCode.trim(), customerId)
+      .first();
+    if (!owns) {
+      return NextResponse.json(
+        { success: false, error: "Invalid, expired or already-used coupon code" },
+        { status: 400 }
+      );
+    }
+    couponOwner = customerId;
+  }
 
   // Server-side price validation: prices always come from the DB, never the client.
   const dishes = await getDishesByIds(items.map((i) => i.menuItemId));
@@ -89,7 +115,11 @@ export async function POST(request: NextRequest) {
     const sale = await createPaidSale({
       items: validatedItems,
       tableNumber: tableNumber || null,
-      userId: auth.session.userId,
+      // Loyalty and coupon redemption accrue to the GUEST, not the cashier who
+      // processed the sale. `createdBy` still records the staff member.
+      userId: customerId ?? null,
+      customerId: customerId ?? null,
+      couponCode: couponOwner ? couponCode!.trim() : undefined,
       customerName,
       paymentMethod,
       receiptType,

@@ -1039,17 +1039,72 @@ export async function createOrder(data: any): Promise<any> {
 
   await db.batch(statements);
 
-  // Loyalty: award points for every $10 spent
-  await awardLoyaltyPoints(data.userId, order.total, id);
+  // NOTE: loyalty points are NOT awarded here. Points accrue on payment
+  // settlement (see `createPaidSale`) so abandoned/unpaid orders cannot mint
+  // points and `total_spent` only ever counts money actually received.
 
   await notifyRealtime({ type: "orders" });
   return order;
 }
 
 // ---- Loyalty / Royal Points ----
-export async function awardLoyaltyPoints(userId: string | undefined, orderTotal: number, orderId: string): Promise<void> {
+/**
+ * Loyalty economics. All amounts are in kyat — the restaurant's operating
+ * currency, matching the `dishes.price` column.
+ *
+ *   • Every KYAT_POINTS_UNIT kyat of settled revenue earns 1 point.
+ *   • Every COUPON_POINT_THRESHOLD points earns one spendable
+ *     COUPON_VALUE_KYAT coupon.
+ *
+ * Rates live here rather than inline so the economics are changed in one place.
+ */
+export const KYAT_POINTS_UNIT = 10000;
+export const COUPON_POINT_THRESHOLD = 100;
+export const COUPON_VALUE_KYAT = 10000;
+
+/** Points earned by an order of `amountKyat`, floored per complete unit. */
+export function pointsForAmount(amountKyat: number): number {
+  if (!Number.isFinite(amountKyat) || amountKyat <= 0) return 0;
+  return Math.floor(amountKyat / KYAT_POINTS_UNIT);
+}
+
+/** Tier thresholds, highest first. Derived from balance alone. */
+export function tierForPoints(points: number): "Bronze" | "Silver" | "Gold" | "Diamond" {
+  if (points >= 500) return "Diamond";
+  if (points >= 200) return "Gold";
+  if (points >= COUPON_POINT_THRESHOLD) return "Silver";
+  return "Bronze";
+}
+
+/** Unique, human-readable coupon code (no ambiguous 0/O/1/I). */
+async function generateCouponCode(): Promise<string> {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  let suffix = "";
+  for (const b of bytes) suffix += alphabet[b % alphabet.length];
+  // Retry on the (astronomically unlikely) collision.
+  const clash = await getDB()
+    .prepare("SELECT 1 FROM coupons WHERE code = ? LIMIT 1")
+    .bind(`ROYAL-${suffix}`)
+    .first<any>();
+  return clash ? `ROYAL-${suffix}${Math.floor(Math.random() * 10)}` : `ROYAL-${suffix}`;
+}
+
+/**
+ * Award points for a settled (paid) order and issue any newly unlocked coupons.
+ * Called from the payment path only — never when an order is merely created.
+ */
+export async function awardLoyaltyPoints(
+  userId: string | undefined,
+  orderTotal: number,
+  orderId: string,
+  orderNumber?: string
+): Promise<void> {
   if (!userId) return;
-  const pointsEarned = Math.floor(orderTotal / 1000); // $10 = 1000 cents → 1 point
+
+  // Points accrue on the amount actually paid, after any coupon discount, so a
+  // discounted order cannot inflate the points balance.
+  const pointsEarned = pointsForAmount(orderTotal);
   if (pointsEarned <= 0) return;
 
   const db = getDB();
@@ -1068,83 +1123,179 @@ export async function awardLoyaltyPoints(userId: string | undefined, orderTotal:
       userId,
       orderId,
       pointsEarned,
-      `Earned ${pointsEarned} pts from order ${orderId}`
+      `Earned ${pointsEarned} pts from paid order ${orderNumber || orderId}`
     )
     .run();
 
-  // Check if user qualifies for a $10 coupon (every 100 points)
+  await issueEarnedCoupons(userId, orderId, orderNumber);
+}
+
+/**
+ * Issue any coupon milestones newly unlocked by the user's current balance.
+ *
+ * Coupons already issued are counted (used or not) so a redeemed coupon can
+ * never be re-issued for the same 100-point block.
+ */
+async function issueEarnedCoupons(
+  userId: string,
+  orderId: string | null,
+  orderNumber?: string
+): Promise<void> {
+  const db = getDB();
   const user = await db
     .prepare("SELECT points FROM users WHERE id = ?")
     .bind(userId)
     .first<any>();
-  if (user && user.points >= 100) {
-    const couponsOwed = Math.floor(user.points / 100);
-    // Count existing coupons for this user
-    const { results: existing } = await db
-      .prepare("SELECT COUNT(*) as c FROM coupons WHERE user_id = ?")
-      .bind(userId)
-      .all<any>();
-    const owed = couponsOwed - (existing[0]?.c || 0);
-    for (let i = 0; i < owed; i++) {
-      const code = `ROYAL-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-      await db
-        .prepare(
-          "INSERT INTO coupons (id, branch_id, user_id, code, amount, is_used) VALUES (?, ?, ?, ?, ?, 0)"
-        )
-        .bind(`cpn-${Date.now()}-${i}`, "default-branch", userId, code, 1000)
-        .run();
-      await db
-        .prepare(
-          "INSERT INTO loyalty_events (id, branch_id, user_id, order_id, points_earned, coupon_code, reason) VALUES (?, ?, ?, ?, ?, ?, ?)"
-        )
-        .bind(
-          `loy-cpn-${Date.now()}-${i}`,
-          "default-branch",
-          userId,
-          orderId,
-          0,
-          code,
-          `Coupon awarded: 100 points milestone`
-        )
-        .run();
-    }
+  if (!user) return;
+
+  const milestonesUnlocked = Math.floor(user.points / COUPON_POINT_THRESHOLD);
+  if (milestonesUnlocked <= 0) return;
+
+  const { results: existing } = await db
+    .prepare("SELECT COUNT(*) as c FROM coupons WHERE user_id = ?")
+    .bind(userId)
+    .all<any>();
+  const owed = milestonesUnlocked - (existing[0]?.c || 0);
+
+  for (let i = 0; i < owed; i++) {
+    const code = await generateCouponCode();
+    await db
+      .prepare(
+        "INSERT INTO coupons (id, branch_id, user_id, code, amount, is_used) VALUES (?, ?, ?, ?, ?, 0)"
+      )
+      .bind(`cpn-${Date.now()}-${i}`, "default-branch", userId, code, COUPON_VALUE_KYAT)
+      .run();
+    await db
+      .prepare(
+        "INSERT INTO loyalty_events (id, branch_id, user_id, order_id, points_earned, coupon_code, reason) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      )
+      .bind(
+        `loy-cpn-${Date.now()}-${i}`,
+        "default-branch",
+        userId,
+        orderId,
+        0,
+        code,
+        `Coupon issued for ${COUPON_POINT_THRESHOLD}-point milestone`
+      )
+      .run();
   }
 }
 
-export async function getRoyalCustomers(filters?: { minSpend?: number; minPoints?: number; search?: string }): Promise<any[]> {
-  let sql = `
-    SELECT u.id, u.email, u.name, u.role, u.points, u.total_spent, u.created_at,
-           (SELECT COUNT(*) FROM coupons c WHERE c.user_id = u.id) as coupon_count,
-           (SELECT COALESCE(SUM(o.total), 0) FROM orders o WHERE o.user_id = u.id AND o.payment_status = 'paid') as verified_spent
-    FROM users u
-    WHERE u.role = 'customer' AND u.is_active = 1
-  `;
-  const params: any[] = [];
-  if (filters?.minSpend) {
-    sql += " AND total_spent >= ?";
-    params.push(filters.minSpend);
+/**
+ * Validate a coupon code for a user and return its value in kyat, or null if
+ * the code is unknown, already used, expired, or belongs to another user.
+ */
+export async function validateCoupon(
+  userId: string | undefined,
+  code: string | null | undefined
+): Promise<{ code: string; amount: number } | null> {
+  if (!userId || !code) return null;
+  const row = await getDB()
+    .prepare(
+      "SELECT code, amount, is_used, expires_at FROM coupons WHERE UPPER(code) = UPPER(?) AND user_id = ? LIMIT 1"
+    )
+    .bind(code.trim(), userId)
+    .first<any>();
+  if (!row || row.is_used) return null;
+  if (row.expires_at && new Date(row.expires_at).getTime() < Date.now()) return null;
+  return { code: row.code, amount: row.amount };
+}
+
+/** Mark a coupon as spent. Callers must only call this after a successful sale. */
+export async function redeemCoupon(userId: string, code: string): Promise<void> {
+  await getDB()
+    .prepare("UPDATE coupons SET is_used = 1 WHERE UPPER(code) = UPPER(?) AND user_id = ?")
+    .bind(code.trim(), userId)
+    .run();
+  await getDB()
+    .prepare(
+      "INSERT INTO loyalty_events (id, branch_id, user_id, points_redeemed, coupon_code, reason) VALUES (?, ?, ?, ?, ?, ?)"
+    )
+    .bind(
+      `loy-redeem-${Date.now()}`,
+      "default-branch",
+      userId,
+      COUPON_POINT_THRESHOLD,
+      code.trim(),
+      `Redeemed coupon ${code.trim()}`
+    )
+    .run();
+}
+
+/** Coupons still available to spend for a user. */
+export async function listActiveCoupons(userId: string): Promise<any[]> {
+  const { results } = await getDB()
+    .prepare(
+      `SELECT id, code, amount, expires_at, created_at FROM coupons
+       WHERE user_id = ? AND is_used = 0
+         AND (expires_at IS NULL OR expires_at > ?)
+       ORDER BY created_at DESC`
+    )
+    .bind(userId, new Date().toISOString())
+    .all<any>();
+  return results.map((c: any) => ({
+    id: c.id,
+    code: c.code,
+    amount: c.amount,
+    expiresAt: c.expires_at,
+    createdAt: c.created_at,
+  }));
+}
+
+export async function getRoyalCustomers(filters?: { minSpend?: number; minPoints?: number; search?: string; tier?: string }): Promise<any[]> {
+  const { results } = await getDB()
+    .prepare(
+      `SELECT u.id, u.email, u.name, u.role, u.points, u.total_spent, u.created_at,
+              (SELECT COUNT(*) FROM coupons c WHERE c.user_id = u.id) AS coupon_count,
+              (SELECT COUNT(*) FROM coupons c WHERE c.user_id = u.id AND c.is_used = 0) AS active_coupon_count,
+              (SELECT COALESCE(SUM(o.total - COALESCE(o.discount, 0)), 0)
+                 FROM orders o WHERE o.user_id = u.id AND o.payment_status = 'paid') AS verified_spent,
+              (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.id AND o.payment_status = 'paid') AS paid_orders,
+              (SELECT MAX(o.created_at) FROM orders o WHERE o.user_id = u.id) AS last_order_at
+       FROM users u
+       WHERE u.role = 'customer' AND u.is_active = 1
+       ORDER BY verified_spent DESC, u.points DESC`
+    )
+    .all<any>();
+
+  let rows = results.map((r: any) => {
+    const points = r.points || 0;
+    const verifiedSpent = r.verified_spent || 0;
+    return {
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      points,
+      // Real money: settled order totals, net of any coupon discount.
+      verifiedSpent,
+      // Stand-in for pre-seeded balances not backed by real orders.
+      seededSpent: Math.max(0, (r.total_spent || 0) - verifiedSpent),
+      paidOrders: r.paid_orders || 0,
+      couponCount: r.coupon_count || 0,
+      activeCouponCount: r.active_coupon_count || 0,
+      tier: tierForPoints(points),
+      lastOrderAt: r.last_order_at || null,
+      createdAt: r.created_at,
+    };
+  });
+
+  if (filters?.search) {
+    const q = filters.search.toLowerCase();
+    rows = rows.filter(
+      (r) => r.name.toLowerCase().includes(q) || r.email.toLowerCase().includes(q)
+    );
   }
   if (filters?.minPoints) {
-    sql += " AND points >= ?";
-    params.push(filters.minPoints);
+    rows = rows.filter((r) => r.points >= filters.minPoints!);
   }
-  if (filters?.search) {
-    sql += " AND (name LIKE ? OR email LIKE ?)";
-    params.push(`%${filters.search}%`, `%${filters.search}%`);
+  if (filters?.minSpend) {
+    rows = rows.filter((r) => r.verifiedSpent >= filters.minSpend!);
   }
-  sql += " ORDER BY points DESC, total_spent DESC";
-  const { results } = await getDB().prepare(sql).bind(...params).all<any>();
-  return results.map((r: any) => ({
-    id: r.id,
-    name: r.name,
-    email: r.email,
-    points: r.points,
-    totalSpent: r.total_spent,
-    verifiedSpent: r.verified_spent,
-    couponCount: r.coupon_count,
-    tier: r.points >= 500 ? "Diamond" : r.points >= 200 ? "Gold" : r.points >= 100 ? "Silver" : "Bronze",
-    createdAt: r.created_at,
-  }));
+  if (filters?.tier) {
+    rows = rows.filter((r) => r.tier === filters.tier);
+  }
+  return rows;
 }
 
 export async function listOrders(): Promise<any[]> {
@@ -1726,14 +1877,30 @@ export async function createPaidSale(data: any): Promise<{
     specialInstructions: item.specialInstructions || "",
   }));
 
-  const subtotal = validatedItems.reduce(
+  const grossSubtotal = validatedItems.reduce(
     (s: number, it: any) => s + it.price * it.quantity,
     0
   );
+  const now = new Date().toISOString();
+
+  // Resolve and apply a coupon discount BEFORE totals are finalised, so tax,
+  // service charge, the receipt and the loyalty points all reflect the amount
+  // the guest actually pays.
+  let discount = 0;
+  let appliedCoupon: { code: string; amount: number } | null = null;
+  if (data.couponCode && data.userId) {
+    appliedCoupon = await validateCoupon(data.userId, data.couponCode);
+    if (!appliedCoupon) {
+      throw new Error("Invalid, expired or already-used coupon code");
+    }
+    // Never discount past zero.
+    discount = Math.min(appliedCoupon.amount, grossSubtotal);
+  }
+
+  const subtotal = Math.max(0, grossSubtotal - discount);
   const tax = Math.round(subtotal * 0.1);
   const serviceCharge = Math.round(subtotal * 0.05);
   const total = subtotal + tax + serviceCharge;
-  const now = new Date().toISOString();
 
   const order = {
     id,
@@ -1742,6 +1909,8 @@ export async function createPaidSale(data: any): Promise<{
     tableNumber: data.tableNumber || null,
     items: validatedItems.map((it: any) => ({ ...it, status: "served" })),
     subtotal,
+    discount,
+    couponCode: appliedCoupon?.code ?? null,
     tax,
     serviceCharge,
     total,
@@ -1763,6 +1932,7 @@ export async function createPaidSale(data: any): Promise<{
     customerName: data.customerName || "Guest",
     tableNumber: data.tableNumber || null,
     subtotal,
+    discount,
     tax,
     serviceCharge,
     total,
@@ -1784,8 +1954,8 @@ export async function createPaidSale(data: any): Promise<{
   const statements = [
     db
       .prepare(
-        `INSERT INTO orders (id, branch_id, order_number, user_id, table_number, subtotal, tax, service_charge, total, status, payment_status, special_instructions)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO orders (id, branch_id, order_number, user_id, table_number, subtotal, tax, service_charge, total, status, payment_status, special_instructions, discount, coupon_code)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         id,
@@ -1799,7 +1969,9 @@ export async function createPaidSale(data: any): Promise<{
         total,
         "completed",
         "paid",
-        order.specialInstructions
+        order.specialInstructions,
+        discount,
+        appliedCoupon?.code ?? null
       ),
     ...validatedItems.map((it: any) =>
       db
@@ -1844,6 +2016,17 @@ export async function createPaidSale(data: any): Promise<{
   ];
 
   await db.batch(statements);
+
+  // Loyalty settles AFTER the sale is durably recorded, so a failed batch
+  // never mints points. Points accrue on the amount actually paid (any coupon
+  // discount is already reflected in `total`).
+  if (data.userId) {
+    if (appliedCoupon) {
+      await redeemCoupon(data.userId, appliedCoupon.code);
+    }
+    await awardLoyaltyPoints(data.userId, total, id, orderNumber);
+  }
+
   await notifyRealtime({ type: "orders" });
   await notifyRealtime({ type: "receipts" });
   return { order, receipt };

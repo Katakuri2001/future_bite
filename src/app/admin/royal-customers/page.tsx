@@ -23,6 +23,9 @@ export default function RoyalCustomersPage() {
     setLoading(false);
   };
 
+  const kyat = (n: number) => `${Number(n || 0).toLocaleString()} K`;
+  const TIERS = ["Bronze", "Silver", "Gold", "Diamond"];
+
   useEffect(() => {
     fetchCustomers();
   }, []);
@@ -88,16 +91,17 @@ export default function RoyalCustomersPage() {
                 <th className="text-left p-4">Customer</th>
                 <th className="text-left p-4">Tier</th>
                 <th className="text-right p-4">Points</th>
-                <th className="text-right p-4">Total Spent</th>
+                <th className="text-right p-4">Verified Spend</th>
+                <th className="text-right p-4">Orders</th>
                 <th className="text-right p-4">Coupons</th>
-                <th className="text-left p-4">Joined</th>
+                <th className="text-left p-4">Last Order</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6} className="p-8 text-center text-ivory-dim">Loading...</td></tr>
+                <tr><td colSpan={7} className="p-8 text-center text-ivory-dim">Loading...</td></tr>
               ) : customers.length === 0 ? (
-                <tr><td colSpan={6} className="p-8 text-center text-ivory-dim">No royal customers found.</td></tr>
+                <tr><td colSpan={7} className="p-8 text-center text-ivory-dim">No royal customers found.</td></tr>
               ) : (
                 customers.map((c) => (
                   <tr key={c.id} className="border-b border-border/30 hover:bg-surface-elevated transition-colors">
@@ -123,11 +127,27 @@ export default function RoyalCustomersPage() {
                       </span>
                     </td>
                     <td className="p-4 text-right text-gold font-semibold">{c.points} pts</td>
-                    <td className="p-4 text-right text-ivory">${(c.totalSpent / 100).toFixed(2)}</td>
                     <td className="p-4 text-right">
-                      <span className="text-ivory-dim flex items-center justify-end gap-1"><Gift size={12} className="text-gold" /> {c.couponCount}</span>
+                      <div className="text-ivory">{kyat(c.verifiedSpent)}</div>
+                      {c.seededSpent > 0 && (
+                        <div className="text-[10px] text-ivory-dim mt-0.5" title="Pre-seeded demo balance, not backed by settled orders">
+                          +{kyat(c.seededSpent)} seeded
+                        </div>
+                      )}
                     </td>
-                    <td className="p-4 text-ivory-dim text-xs">{new Date(c.createdAt).toLocaleDateString()}</td>
+                    <td className="p-4 text-right text-ivory-dim">{c.paidOrders}</td>
+                    <td className="p-4 text-right">
+                      <span className="text-ivory-dim flex items-center justify-end gap-1">
+                        <Gift size={12} className="text-gold" />
+                        {c.activeCouponCount}
+                        {c.couponCount > c.activeCouponCount && (
+                          <span className="text-[10px]">/ {c.couponCount}</span>
+                        )}
+                      </span>
+                    </td>
+                    <td className="p-4 text-ivory-dim text-xs">
+                      {c.lastOrderAt ? new Date(c.lastOrderAt).toLocaleDateString() : "—"}
+                    </td>
                   </tr>
                 ))
               )}
