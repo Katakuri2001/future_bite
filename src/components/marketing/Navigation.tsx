@@ -4,8 +4,9 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, User } from "lucide-react";
+import { Menu, X, User, ShoppingBag } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useCart } from "@/context/CartContext";
 
 const navLinks = [
   { href: "/menu", label: "Menu" },
@@ -17,6 +18,7 @@ const navLinks = [
 export default function Navigation() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { count, open } = useCart();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -87,6 +89,18 @@ export default function Navigation() {
               >
                 <User size={18} strokeWidth={1.5} />
               </Link>
+              <button
+                onClick={open}
+                className="relative text-ivory-muted hover:text-gold transition-colors duration-300"
+                aria-label={`Open your order${count ? `, ${count} item${count === 1 ? "" : "s"}` : ""}`}
+              >
+                <ShoppingBag size={18} strokeWidth={1.5} />
+                {count > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 bg-gold text-bg text-[10px] font-semibold rounded-full flex items-center justify-center tabular-nums">
+                    {count}
+                  </span>
+                )}
+              </button>
               <Link href="/reserve" className="btn-primary text-xs py-3 px-6">
                 Reserve
               </Link>

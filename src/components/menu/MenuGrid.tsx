@@ -1,25 +1,106 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Search, SlidersHorizontal } from "lucide-react";
-import { cn, formatPrice } from "@/lib/utils";
-import { menuItems, menuCategories } from "@/lib/data";
+import { Search, SlidersHorizontal, Plus, Loader2, AlertCircle } from "lucide-react";
+import { cn, formatKyat } from "@/lib/utils";
+import { useCart } from "@/context/CartContext";
+
+interface MenuItem {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  price: number;
+  category: string;
+  categorySlug: string;
+  imageUrl: string;
+  dietary: string[];
+  isAvailable: boolean;
+}
+
+interface MenuCategory {
+  id: string;
+  name: string;
+  slug: string;
+}
 
 export default function MenuGrid() {
+  const [items, setItems] = useState<MenuItem[]>([]);
+  const [categories, setCategories] = useState<MenuCategory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState("all");
   const [search, setSearch] = useState("");
+  const { addItem } = useCart();
 
-  const filtered = menuItems.filter((item) => {
+  // Menu is served from the database so admin/kitchen edits appear immediately.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/menu");
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        const data = await res.json();
+        if (cancelled) return;
+        setItems(data.items || data.data?.items || []);
+        setCategories(data.categories || data.data?.categories || []);
+      } catch (e: any) {
+        if (!cancelled) {
+          setError(
+            "The menu is unavailable right now. Please refresh or call us to order."
+          );
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const addToOrder = useCallback(
+    (item: MenuItem) => {
+      addItem({
+        menuItemId: item.id,
+        name: item.name,
+        price: item.price,
+        imageUrl: item.imageUrl,
+      });
+    },
+    [addItem]
+  );
+
+  const filtered = items.filter((item) => {
     const matchesCategory =
       activeCategory === "all" || item.categorySlug === activeCategory;
+    const q = search.trim().toLowerCase();
     const matchesSearch =
-      !search ||
-      item.name.toLowerCase().includes(search.toLowerCase()) ||
-      item.description.toLowerCase().includes(search.toLowerCase());
+      !q ||
+      item.name.toLowerCase().includes(q) ||
+      (item.description || "").toLowerCase().includes(q);
     return matchesCategory && matchesSearch;
   });
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24 gap-3 text-ivory-dim">
+        <Loader2 size={18} className="animate-spin" />
+        <span className="text-sm tracking-widest uppercase">Loading menu</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 gap-3 text-center">
+        <AlertCircle size={28} className="text-error" strokeWidth={1.5} />
+        <p className="text-ivory-muted text-sm max-w-sm">{error}</p>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -34,6 +115,7 @@ export default function MenuGrid() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search the menu..."
+          aria-label="Search the menu"
           className="w-full bg-surface border border-border-light text-ivory pl-11 pr-4 py-3 text-sm focus:border-gold focus:outline-none transition-colors"
         />
       </div>
@@ -51,7 +133,7 @@ export default function MenuGrid() {
         >
           All
         </button>
-        {menuCategories.map((cat) => (
+        {categories.map((cat) => (
           <button
             key={cat.slug}
             onClick={() => setActiveCategory(cat.slug)}
@@ -70,35 +152,43 @@ export default function MenuGrid() {
       {/* Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filtered.map((item) => (
-          <Link
+          <article
             key={item.id}
-            href={`/menu/${item.slug}`}
-            className="group bg-surface border border-border/50 hover:border-border-light transition-all duration-500 overflow-hidden"
+            className="group bg-surface border border-border/50 hover:border-border-light transition-all duration-500 overflow-hidden flex flex-col"
           >
-            <div className="img-zoom aspect-[4/3] overflow-hidden bg-bg relative">
-              <Image
-                src={item.imageUrl}
-                alt={item.name}
-                fill
-                sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
-                className="w-full h-full object-cover"
-                loading="lazy"
-              />
-            </div>
-            <div className="p-5">
+            <Link
+              href={`/menu/${item.slug}`}
+              className="block img-zoom aspect-[4/3] overflow-hidden bg-bg relative"
+            >
+              {item.imageUrl ? (
+                <Image
+                  src={item.imageUrl}
+                  alt={item.name}
+                  fill
+                  sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-br from-surface-elevated to-bg" />
+              )}
+            </Link>
+            <div className="p-5 flex flex-col flex-1">
               <div className="flex items-start justify-between gap-3 mb-2">
-                <h3 className="text-display text-lg text-ivory group-hover:text-gold transition-colors duration-300">
-                  {item.name}
-                </h3>
+                <Link href={`/menu/${item.slug}`}>
+                  <h3 className="text-display text-lg text-ivory group-hover:text-gold transition-colors duration-300">
+                    {item.name}
+                  </h3>
+                </Link>
                 <span className="text-gold font-medium text-sm whitespace-nowrap">
-                  {formatPrice(item.price)}
+                  {formatKyat(item.price)}
                 </span>
               </div>
-              <p className="text-ivory-muted text-sm leading-relaxed mb-3 line-clamp-2">
+              <p className="text-ivory-muted text-sm leading-relaxed mb-3 line-clamp-2 flex-1">
                 {item.description}
               </p>
-              <div className="flex flex-wrap gap-1.5">
-                {item.dietary.map((d) => (
+              <div className="flex flex-wrap gap-1.5 mb-4">
+                {(item.dietary || []).map((d) => (
                   <span
                     key={d}
                     className="text-[10px] tracking-[0.1em] uppercase text-accent-light border border-accent px-2 py-0.5"
@@ -110,8 +200,21 @@ export default function MenuGrid() {
                   {item.category}
                 </span>
               </div>
+              <button
+                onClick={() => addToOrder(item)}
+                disabled={!item.isAvailable}
+                className="btn-outline text-xs py-3 w-full disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {item.isAvailable ? (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <Plus size={13} /> Add to Order
+                  </span>
+                ) : (
+                  "Unavailable"
+                )}
+              </button>
             </div>
-          </Link>
+          </article>
         ))}
       </div>
 

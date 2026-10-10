@@ -843,6 +843,36 @@ export async function nextCounter(name: string): Promise<number> {
   return row ? row.value : 1;
 }
 
+/**
+ * Allocate a human-readable document number (e.g. `#1042`, `R-2026-0007`)
+ * that is guaranteed not to already exist.
+ *
+ * `nextCounter` increments atomically, but the counter can drift behind reality
+ * (manually inserted rows, a failed batch, a restored backup). Without this
+ * guard the next insert hits a UNIQUE constraint and the request 500s — which
+ * for a customer means their order is rejected for a reason they cannot see.
+ * Reserving the number against the live table makes the drift self-healing.
+ */
+export async function nextUniqueNumber(
+  counterName: string,
+  table: string,
+  column: string,
+  format: (n: number) => string
+): Promise<string> {
+  const db = getDB();
+  for (let attempt = 0; attempt < 25; attempt++) {
+    const n = await nextCounter(counterName);
+    const candidate = format(n);
+    const taken = await db
+      .prepare(`SELECT 1 FROM ${table} WHERE ${column} = ? LIMIT 1`)
+      .bind(candidate)
+      .first<any>();
+    if (!taken) return candidate;
+  }
+  // Extremely unlikely; fall back to a value no counter can reach.
+  return format(await nextCounter(counterName) + 1_000_000);
+}
+
 // ---- Reservations ----
 export async function createReservation(data: any): Promise<any> {
   const counter = await nextCounter("reservation");
@@ -927,9 +957,10 @@ export async function reservationsOn(date: string, time?: string): Promise<any[]
 
 // ---- Orders ----
 export async function createOrder(data: any): Promise<any> {
-  const counter = await nextCounter("order");
   const id = data.id || `ord-${generateToken().slice(0, 8)}`;
-  const orderNumber = data.orderNumber || `#${counter}`;
+  const orderNumber =
+    data.orderNumber ||
+    (await nextUniqueNumber("order", "orders", "order_number", (n) => `#${n}`));
   const requestedStatus = data.status || "pending";
   const requestedPayment = data.paymentStatus || "pending";
   const validatedItems = (data.items || []).map((item: any, i: number) => ({
@@ -1442,8 +1473,9 @@ export async function listKitchenOrders(): Promise<any[]> {
 export async function createKitchenOrder(data: any): Promise<any> {
   void data.orderId;
   void data.id;
-  const counter = await nextCounter("order");
-  const orderNumber = data.orderNumber || `#${counter}`;
+  const orderNumber =
+    data.orderNumber ||
+    (await nextUniqueNumber("order", "orders", "order_number", (n) => `#${n}`));
   const items = data.items || [
     { name: "New Dish", quantity: 1, status: "pending", specialInstructions: "" },
   ];
@@ -1821,10 +1853,12 @@ export async function getAnalytics(): Promise<any> {
 
 // ---- Receipts (POS — E-receipts & physical receipts) ----
 export async function createReceipt(data: any): Promise<any> {
-  const counter = await nextCounter("receipt");
   const year = new Date().getFullYear();
   const receiptNo =
-    data.receiptNo || `R-${year}-${String(counter).padStart(4, "0")}`;
+    data.receiptNo ||
+    (await nextUniqueNumber("receipt", "receipts", "receipt_no", (n) =>
+      `R-${year}-${String(n).padStart(4, "0")}`
+    ));
   const id = data.id || `rec-${generateToken().slice(0, 8)}`;
   await getDB()
     .prepare(
@@ -1863,9 +1897,10 @@ export async function createPaidSale(data: any): Promise<{
   order: any;
   receipt: any;
 }> {
-  const counter = await nextCounter("order");
   const id = data.id || `ord-${generateToken().slice(0, 8)}`;
-  const orderNumber = data.orderNumber || `#${counter}`;
+  const orderNumber =
+    data.orderNumber ||
+    (await nextUniqueNumber("order", "orders", "order_number", (n) => `#${n}`));
   const validatedItems = (data.items || []).map((item: any, i: number) => ({
     id: item.id || `oi-${id}-${i}`,
     menuItemId: item.menuItemId || item.id || "dish-001",
@@ -1921,12 +1956,17 @@ export async function createPaidSale(data: any): Promise<{
     updatedAt: now,
   };
 
-  const receiptCounter = await nextCounter("receipt");
   const year = new Date().getFullYear();
+  const receiptNo = await nextUniqueNumber(
+    "receipt",
+    "receipts",
+    "receipt_no",
+    (n) => `R-${year}-${String(n).padStart(4, "0")}`
+  );
   const receiptId = data.receiptId || `rec-${generateToken().slice(0, 8)}`;
   const receipt = {
     id: receiptId,
-    receiptNo: `R-${year}-${String(receiptCounter).padStart(4, "0")}`,
+    receiptNo,
     orderId: id,
     orderNumber,
     customerName: data.customerName || "Guest",

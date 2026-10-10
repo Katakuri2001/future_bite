@@ -5,6 +5,15 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/**
+ * Format an amount in kyat. Kyat has no minor unit, so amounts are whole
+ * numbers — this is the correct formatter for prices in `dishes.price`.
+ */
+export function formatKyat(amount: number): string {
+  return `${Math.round(Number(amount) || 0).toLocaleString("en-US")} K`;
+}
+
+/** @deprecated Legacy cents/USD formatter. Use `formatKyat` for menu prices. */
 export function formatPrice(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
