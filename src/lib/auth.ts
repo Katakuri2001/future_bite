@@ -92,6 +92,13 @@ export async function requireCashier(
   return requireAuth(request, ["cashier"]);
 }
 
+/** Waiter floor service — waiters, plus admins and managers overseeing. */
+export async function requireWaiter(
+  request: NextRequest
+): Promise<AuthResult> {
+  return requireAuth(request, ["waiter", "admin", "manager"]);
+}
+
 /** Receipt register — owners (admin), managers and cashiers. */
 export async function requireReceipts(
   request: NextRequest

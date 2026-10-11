@@ -7,6 +7,7 @@ const KITCHEN_ACCESS_ROLES = ["kitchen", "admin", "manager"];
 const POS_ACCESS_ROLES = ["cashier", "admin", "manager", "waiter", "host"];
 /** Customer-owned areas. Any signed-in role may read these. */
 const CUSTOMER_ROLES = ["customer", "waiter", "host"];
+const WAITER_ROLES = ["waiter", "admin", "manager"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -16,7 +17,15 @@ export async function proxy(request: NextRequest) {
   const isPOSPage = pathname.startsWith("/pos");
   const isAccountPage = pathname.startsWith("/account");
   const isOrderPage = pathname.startsWith("/order");
-  if (!isAdminPage && !isKitchenPage && !isPOSPage && !isAccountPage && !isOrderPage) {
+  const isWaiterPage = pathname.startsWith("/waiter");
+  if (
+    !isAdminPage &&
+    !isKitchenPage &&
+    !isPOSPage &&
+    !isAccountPage &&
+    !isOrderPage &&
+    !isWaiterPage
+  ) {
     return NextResponse.next();
   }
 
@@ -49,11 +58,19 @@ export async function proxy(request: NextRequest) {
   if (isPOSPage && !POS_ACCESS_ROLES.includes(role)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
-  // Staff use the POS/admin desks, not the customer account portal.
+  // Staff use the POS/admin desks, not the customer account portal. A waiter
+  // has their own station, so they are sent there rather than bounced.
   if ((isAccountPage || isOrderPage) && !CUSTOMER_ROLES.includes(role)) {
-    return NextResponse.redirect(
-      new URL(role === "kitchen" ? "/kitchen" : "/admin", request.url)
-    );
+    const fallback =
+      role === "kitchen"
+        ? "/kitchen"
+        : role === "waiter" || role === "host"
+        ? "/waiter"
+        : "/admin";
+    return NextResponse.redirect(new URL(fallback, request.url));
+  }
+  if (isWaiterPage && !WAITER_ROLES.includes(role)) {
+    return NextResponse.redirect(new URL("/login", request.url));
   }
 
   return NextResponse.next();
@@ -64,6 +81,7 @@ export const config = {
     "/admin/:path*",
     "/kitchen/:path*",
     "/pos/:path*",
+    "/waiter/:path*",
     "/account/:path*",
     "/order/:path*",
   ],

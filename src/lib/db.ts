@@ -1350,60 +1350,167 @@ export async function getOrder(id: string): Promise<any | null> {
   return { ...order, items: items.results };
 }
 
-// Allowed order/kitchen status transitions. Mirrors the kitchen board UI so the
-// public PATCH /api/kitchen endpoint cannot write arbitrary statuses.
-export const KITCHEN_STATUS_FLOW: Record<string, string[]> = {
+// Per-dish status transitions.
+//
+// A dish moves pending -> accepted -> preparing -> plating -> ready under the
+// kitchen's control, then ready -> served under the waiter's control, because
+// serving is the moment a waiter carries it to the table. The kitchen therefore
+// cannot mark a dish served, and the waiter cannot advance a dish through the
+// kitchen's stages — the split is enforced here, not just hidden in the UI.
+export const DISH_STATUS_FLOW: Record<string, string[]> = {
   pending: ["accepted", "cancelled"],
   accepted: ["preparing", "cancelled"],
   preparing: ["plating", "cancelled"],
-  plating: ["ready", "served", "cancelled"],
-  ready: ["served", "cancelled"],
-  served: ["completed"],
-  completed: [],
+  plating: ["ready", "cancelled"],
+  ready: ["served"],
+  served: [],
   cancelled: [],
 };
 
+/** Transitions the kitchen may drive. `served` is deliberately absent. */
+export const KITCHEN_ITEM_FLOW: Record<string, string[]> = {
+  pending: ["accepted", "cancelled"],
+  accepted: ["preparing", "cancelled"],
+  preparing: ["plating", "cancelled"],
+  plating: ["ready", "cancelled"],
+};
+
+/** Transitions the waiter may drive. Only handing a ready dish over. */
+export const WAITER_ITEM_FLOW: Record<string, string[]> = {
+  ready: ["served"],
+};
+
+/**
+ * Order status is now derived from its dishes rather than set directly.
+ *
+ * Previously the order was the source of truth and every item was bulk-synced
+ * to the same status. That cannot express "the starter has gone out but the
+ * main is still cooking", which is the normal case for a table order. The
+ * order status is the least-advanced status among its live dishes, so it always
+ * reflects the dish still holding the table up.
+ */
+const STATUS_PRECEDENCE = [
+  "cancelled",
+  "pending",
+  "accepted",
+  "preparing",
+  "plating",
+  "ready",
+  "served",
+];
+
+/** Recompute and persist an order's status from its dishes. */
+export async function recomputeOrderStatus(orderId: string): Promise<string | null> {
+  const db = getDB();
+  const { results } = await db
+    .prepare("SELECT status FROM order_items WHERE order_id = ?")
+    .bind(orderId)
+    .all<any>();
+  if (!results || results.length === 0) return null;
+
+  const live = results.map((r: any) => r.status).filter((s: string) => s !== "cancelled");
+  if (live.length === 0) return "cancelled";
+
+  const derived =
+    STATUS_PRECEDENCE.find((s) => live.includes(s)) ?? "pending";
+
+  const current = await db
+    .prepare("SELECT status FROM orders WHERE id = ?")
+    .bind(orderId)
+    .first<any>();
+  // A settled or cancelled order is terminal; service states must not reopen it.
+  if (current && (current.status === "completed" || current.status === "cancelled")) {
+    return current.status;
+  }
+
+  if (current && current.status !== derived) {
+    await db
+      .prepare(
+        `UPDATE orders SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`
+      )
+      .bind(derived, orderId)
+      .run();
+    await db
+      .prepare(
+        `UPDATE kitchen_orders SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE order_id = ?`
+      )
+      .bind(derived, orderId)
+      .run();
+    await notifyRealtime({ type: "orders", orderId });
+  }
+  return derived;
+}
+
+/**
+ * Move a single dish through its status flow.
+ *
+ * `flow` is chosen by the caller so the kitchen and the waiter each get only the
+ * transitions they own. Serving stamps `served_at`, which is what makes the
+ * ordered -> served duration measurable.
+ */
+export async function updateOrderItemStatus(
+  itemId: string,
+  status: string,
+  flow: Record<string, string[]>,
+  servedBy?: string
+): Promise<any | null> {
+  const db = getDB();
+  const item = await db
+    .prepare("SELECT id, status, order_id FROM order_items WHERE id = ?")
+    .bind(itemId)
+    .first<any>();
+  if (!item) return null;
+
+  const allowed = flow[item.status] || [];
+  if (!allowed.includes(status)) return null;
+
+  const now = new Date().toISOString();
+  if (status === "served") {
+    await db
+      .prepare(
+        `UPDATE order_items SET status = ?, served_at = ?, served_by = ?,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+         WHERE id = ?`
+      )
+      .bind(status, now, servedBy || null, itemId)
+      .run();
+  } else {
+    await db
+      .prepare(
+        `UPDATE order_items SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`
+      )
+      .bind(status, itemId)
+      .run();
+  }
+
+  await recomputeOrderStatus(item.order_id);
+  await notifyRealtime({ type: "orders", orderId: item.order_id, itemId });
+
+  return db
+    .prepare("SELECT * FROM order_items WHERE id = ?")
+    .bind(itemId)
+    .first<any>();
+}
+
+/** Bulk-advance every unserved dish on an order (used by the kitchen board). */
 export async function updateOrderStatus(
   id: string,
   status: string
 ): Promise<any> {
-  const current = await getDB()
-    .prepare("SELECT status FROM orders WHERE id = ?")
+  const db = getDB();
+  const { results } = await db
+    .prepare("SELECT id, status FROM order_items WHERE order_id = ?")
     .bind(id)
-    .first<any>();
-  if (!current) return null;
-  const allowed = KITCHEN_STATUS_FLOW[current.status] || [];
-  if (!allowed.includes(status)) return null;
+    .all<any>();
+  if (!results || results.length === 0) return null;
 
-  const occurred = await getDB()
-    .prepare(
-      `UPDATE orders SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? RETURNING *`
-    )
-    .bind(status, id)
-    .first<any>();
-
-  // Keep order item statuses in sync so per-item icons reflect kitchen progress.
-  const itemStatus =
-    status === "plating" || status === "ready"
-      ? "ready"
-      : status === "served" || status === "completed"
-      ? "served"
-      : null;
-  if (itemStatus) {
-    await getDB()
-      .prepare("UPDATE order_items SET status = ? WHERE order_id = ?")
-      .bind(itemStatus, id)
-      .run();
+  let moved = 0;
+  for (const item of results) {
+    if (await updateOrderItemStatus(item.id, status, KITCHEN_ITEM_FLOW)) moved++;
   }
+  if (moved === 0) return null;
 
-  await getDB()
-    .prepare(
-      `UPDATE kitchen_orders SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE order_id = ?`
-    )
-    .bind(status, id)
-    .run();
-  await notifyRealtime({ type: "orders", orderId: id });
-  return occurred;
+  return db.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<any>();
 }
 
 async function injectOrderItems(orders: any[]): Promise<any[]> {
@@ -2071,6 +2178,125 @@ export async function createPaidSale(data: any): Promise<{
   await notifyRealtime({ type: "orders" });
   await notifyRealtime({ type: "receipts" });
   return { order, receipt };
+}
+
+/**
+ * Settle a table order that a waiter opened.
+ *
+ * The POS normally *creates* a sale; this settles one that already exists, so a
+ * table's bill closes without retyping every dish. The order's stored amounts
+ * are authoritative — they were built from the dishes when the waiter ordered,
+ * and re-pricing here could disagree with what the guest was quoted.
+ */
+export async function settleExistingOrder(data: {
+  orderId: string;
+  paymentMethod?: string;
+  receiptType?: string;
+  createdBy?: string;
+}): Promise<{ order: any; receipt: any }> {
+  const db = getDB();
+  const order = await db
+    .prepare("SELECT * FROM orders WHERE id = ?")
+    .bind(data.orderId)
+    .first<any>();
+
+  if (!order) throw new Error("Order not found");
+  if (order.payment_status === "paid") {
+    throw new Error("This table has already been settled");
+  }
+  if (order.status === "cancelled") {
+    throw new Error("This order was cancelled");
+  }
+
+  const items = await db
+    .prepare(
+      `SELECT id, name, quantity, price, variants, addons FROM order_items WHERE order_id = ?`
+    )
+    .bind(data.orderId)
+    .all<any>();
+
+  const settledAt = new Date().toISOString();
+  const updated = await db
+    .prepare(
+      `UPDATE orders SET payment_status = 'paid', status = 'completed',
+              updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+       WHERE id = ? RETURNING *`
+    )
+    .bind(data.orderId)
+    .first<any>();
+
+  // The kitchen ticket is finished with the bill.
+  await db
+    .prepare(
+      `UPDATE kitchen_orders SET status = 'completed', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE order_id = ?`
+    )
+    .bind(data.orderId)
+    .run();
+
+  const receiptNo = await nextUniqueNumber(
+    "receipt",
+    "receipts",
+    "receipt_no",
+    (n) => `R-${new Date().getFullYear()}-${String(n).padStart(4, "0")}`
+  );
+  const receiptId = `rec-${generateToken().slice(0, 8)}`;
+  const receipt = {
+    id: receiptId,
+    receiptNo,
+    orderId: data.orderId,
+    orderNumber: order.order_number,
+    customerName: order.customer_name || "Guest",
+    tableNumber: order.table_number,
+    subtotal: order.subtotal,
+    discount: order.discount || 0,
+    tax: order.tax,
+    serviceCharge: order.service_charge,
+    total: order.total,
+    paymentMethod: data.paymentMethod || "cash",
+    receiptType: data.receiptType || "e",
+    createdBy: data.createdBy || "",
+    items: (items.results || []).map((it: any) => ({
+      id: it.id,
+      name: it.name,
+      quantity: it.quantity,
+      price: it.price,
+      variants: safeJson(it.variants),
+      addons: safeJson(it.addons),
+    })),
+    createdAt: settledAt,
+  };
+
+  await db
+    .prepare(
+      `INSERT INTO receipts (id, branch_id, receipt_no, order_id, order_number, customer_name, table_number, subtotal, tax, service_charge, total, payment_method, receipt_type, created_by)
+       VALUES (?, 'default-branch', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      receipt.id,
+      receipt.receiptNo,
+      order.id,
+      order.order_number,
+      receipt.customerName,
+      order.table_number,
+      order.subtotal,
+      order.tax,
+      order.service_charge,
+      order.total,
+      receipt.paymentMethod,
+      receipt.receiptType,
+      receipt.createdBy
+    )
+    .run();
+
+  // Table orders are usually walk-ins with no account, so this is a no-op for
+  // them — but a table linked to a registered guest still earns Royal points.
+  if (order.user_id) {
+    await awardLoyaltyPoints(order.user_id, order.total, order.id, order.order_number);
+  }
+
+  await notifyRealtime({ type: "orders" });
+  await notifyRealtime({ type: "receipts" });
+  return { order: updated, receipt };
 }
 
 export async function getReceipt(id: string): Promise<any | null> {

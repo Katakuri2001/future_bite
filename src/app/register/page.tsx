@@ -59,6 +59,8 @@ export default function RegisterPage() {
           router.push("/kitchen");
         } else if (role === "cashier") {
           router.push("/pos");
+        } else if (role === "waiter" || role === "host") {
+          router.push("/waiter");
         } else {
           // customer, waiter, host → stay on main page with account logged in
           router.push("/");

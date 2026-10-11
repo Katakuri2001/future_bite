@@ -19,12 +19,26 @@ function formatElapsed(seconds: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+/**
+ * Per-dish stage in the kitchen. The kitchen stops at `ready` — serving is the
+ * waiter's job, so there is deliberately no SERVED control here.
+ */
+const DISH_STAGES: Record<string, { label: string; next: string } | null> = {
+  pending: { label: "ACCEPT", next: "accepted" },
+  accepted: { label: "START", next: "preparing" },
+  preparing: { label: "PLATE", next: "plating" },
+  plating: { label: "READY", next: "ready" },
+  ready: null,
+  served: null,
+  cancelled: null,
+};
+
 function OrderCard({
   order,
-  onStatusChange,
+  onItemStatusChange,
 }: {
   order: KitchenOrder;
-  onStatusChange: (orderId: string, newStatus: OrderStatus) => void;
+  onItemStatusChange: (orderId: string, itemId: string, next: string) => void;
 }) {
   const priorityColors = {
     normal: "border-l-border-light",
@@ -32,18 +46,9 @@ function OrderCard({
     delayed: "border-l-error",
   };
 
-  const statusActions: Record<OrderStatus, { label: string; next: OrderStatus | null }> = {
-    pending: { label: "ACCEPT", next: "accepted" },
-    accepted: { label: "START", next: "preparing" },
-    preparing: { label: "READY", next: "plating" },
-    plating: { label: "SERVED", next: "served" },
-    ready: { label: "SERVED", next: "served" },
-    served: { label: "COMPLETED", next: "completed" },
-    completed: { label: "", next: null },
-    cancelled: { label: "", next: null },
-  };
-
-  const action = statusActions[order.status];
+  // The order card itself is a summary; the kitchen works dish by dish.
+  const orderBusy = !order.items.some((i: any) => DISH_STAGES[i.status]);
+  const servedCount = order.items.filter((i: any) => i.status === "served").length;
 
   return (
     <div
@@ -84,45 +89,62 @@ function OrderCard({
       </div>
 
       <div className="space-y-1.5 mb-4">
-        {order.items.map((item) => (
-          <div
-            key={item.id}
-            className="flex items-center justify-between text-sm"
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-ivory font-medium">
-                {item.quantity} × {item.name}
-              </span>
-              {item.status === "ready" && (
-                <CheckCircle size={12} className="text-success" />
+        {order.items.map((item: any) => {
+          const stage = DISH_STAGES[item.status];
+          return (
+            <div
+              key={item.id}
+              className="flex items-center justify-between gap-2 text-sm py-0.5"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span
+                  className={cn(
+                    "font-medium truncate",
+                    item.status === "served" ? "text-ivory-dim line-through" : "text-ivory"
+                  )}
+                >
+                  {item.quantity} × {item.name}
+                </span>
+                {item.status === "ready" && (
+                  <CheckCircle size={12} className="text-success shrink-0" />
+                )}
+                {item.status === "preparing" && (
+                  <div className="w-2 h-2 bg-gold rounded-full animate-pulse shrink-0" />
+                )}
+                {item.specialInstructions && (
+                  <span className="text-ivory-dim text-xs italic truncate">
+                    {item.specialInstructions}
+                  </span>
+                )}
+              </div>
+
+              {stage && (
+                <button
+                  onClick={() => onItemStatusChange(order.id, item.id, stage.next)}
+                  className={cn(
+                    "shrink-0 px-2.5 py-1 text-[10px] font-bold tracking-[0.1em] uppercase transition-all duration-200",
+                    item.status === "pending"
+                      ? "bg-gold text-bg hover:bg-gold-muted"
+                      : "bg-surface-elevated text-ivory border border-border-light hover:border-gold hover:text-gold"
+                  )}
+                >
+                  {stage.label}
+                </button>
               )}
-              {item.status === "preparing" && (
-                <div className="w-2 h-2 bg-gold rounded-full animate-pulse" />
+              {item.status === "ready" && (
+                <span className="shrink-0 text-[10px] tracking-[0.1em] uppercase text-success">
+                  Awaiting waiter
+                </span>
               )}
             </div>
-            {item.specialInstructions && (
-              <span className="text-ivory-dim text-xs italic">
-                {item.specialInstructions}
-              </span>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {action.next && (
-        <button
-          onClick={() => onStatusChange(order.id, action.next!)}
-          className={cn(
-            "w-full py-3 text-xs font-bold tracking-[0.15em] uppercase transition-all duration-200",
-            order.status === "pending"
-              ? "bg-gold text-bg hover:bg-gold-muted"
-              : order.status === "preparing" || order.status === "plating"
-              ? "bg-accent text-ivory hover:bg-accent-light"
-              : "bg-surface-elevated text-ivory border border-border-light hover:border-gold hover:text-gold"
-          )}
-        >
-          {action.label}
-        </button>
+      {orderBusy && servedCount > 0 && (
+        <p className="text-[10px] tracking-[0.1em] uppercase text-success text-center">
+          All dishes served
+        </p>
       )}
     </div>
   );
@@ -161,18 +183,33 @@ export default function KitchenBoard() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleStatusChange = useCallback(
-    (orderId: string, newStatus: OrderStatus) => {
+  const handleItemStatusChange = useCallback(
+    (orderId: string, itemId: string, newStatus: string) => {
+      // Optimistic: the tap must feel instant on a busy pass.
       setOrders((prev) =>
-        prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o))
+        prev.map((o) =>
+          o.id === orderId
+            ? {
+                ...o,
+                items: o.items.map((i: any) =>
+                  i.id === itemId ? { ...i, status: newStatus } : i
+                ),
+              }
+            : o
+        )
       );
       fetch("/api/kitchen", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: orderId, status: newStatus }),
-      }).catch(() => {});
+        body: JSON.stringify({ orderId, itemId, status: newStatus }),
+      })
+        .then((res) => {
+          // Reconcile from the server, which recomputes the order status.
+          if (!res.ok) fetchKitchen();
+        })
+        .catch(() => fetchKitchen());
     },
-    []
+    [fetchKitchen]
   );
 
   const newOrders = orders.filter((o) => o.status === "pending");
@@ -249,7 +286,7 @@ export default function KitchenBoard() {
                 <OrderCard
                   key={order.id}
                   order={order}
-                  onStatusChange={handleStatusChange}
+                  onItemStatusChange={handleItemStatusChange}
                 />
               ))}
             </div>
