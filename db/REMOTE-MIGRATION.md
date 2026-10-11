@@ -21,3 +21,19 @@ If `--file` is required (e.g. a large seed), run it from the Cloudflare
 dashboard console instead:
 
 - Dashboard → Workers & Pages → D1 → futurebite-db → Console
+
+## Demo accounts
+
+Ten demo customers live in production to exercise the Royal Customers report
+across every tier. They use the RFC 2606 reserved `.test` TLD
+(`royal1@futurebite.test` … `royal10@futurebite.test`, password `royal123`), so
+they can never receive mail or be mistaken for real guests.
+
+Remove them with a single statement — `coupons` and `loyalty_events` cascade:
+
+    npx wrangler d1 execute futurebite-db --remote --command="\
+      DELETE FROM users WHERE email LIKE '%@futurebite.test'"
+
+Regenerate them with:
+
+    npx tsx scripts/seed-royal-users.ts   # then apply each INSERT via --command

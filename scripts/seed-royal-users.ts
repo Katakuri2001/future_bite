@@ -7,18 +7,23 @@ import { webcrypto } from "crypto";
  * the app itself awards 1 point per 10,000 kyat of settled spend, so the
  * `spendKyat` figure is the real-money equivalent of that balance and is only
  * used to keep the seeded figures self-consistent.
+ *
+ * Uses the RFC 2606 reserved `.test` TLD: it can never resolve, so demo
+ * accounts can never receive mail, be mistaken for a real guest, or clash with
+ * a genuine address. Run `npx tsx scripts/seed-royal-users.ts | grep INSERT` and
+ * feed the output to wrangler to remove them.
  */
 const demoUsers = [
-  { email: "royal1@futurebite.com",  name: "Sarah Chen",    password: "royal123", points: 450, spendKyat: 4_500_000 },
-  { email: "royal2@futurebite.com",  name: "James Patel",   password: "royal123", points: 220, spendKyat: 2_200_000 },
-  { email: "royal3@futurebite.com",  name: "Emily Wong",    password: "royal123", points: 150, spendKyat: 1_500_000 },
-  { email: "royal4@futurebite.com",  name: "Michael Ross",  password: "royal123", points: 80,  spendKyat: 800_000 },
-  { email: "royal5@futurebite.com",  name: "Lisa Park",     password: "royal123", points: 60,  spendKyat: 600_000 },
-  { email: "royal6@futurebite.com",  name: "David Kim",     password: "royal123", points: 110, spendKyat: 1_100_000 },
-  { email: "royal7@futurebite.com",  name: "Anna Lee",      password: "royal123", points: 300, spendKyat: 3_000_000 },
-  { email: "royal8@futurebite.com",  name: "Tom Baker",     password: "royal123", points: 40,  spendKyat: 400_000 },
-  { email: "royal9@futurebite.com",  name: "Nina Garcia",   password: "royal123", points: 180, spendKyat: 1_800_000 },
-  { email: "royal10@futurebite.com", name: "Chris Evans",   password: "royal123", points: 95,  spendKyat: 950_000 },
+  { email: "royal1@futurebite.test",  name: "Sarah Chen",    password: "royal123", points: 450, spendKyat: 4_500_000 },
+  { email: "royal2@futurebite.test",  name: "James Patel",   password: "royal123", points: 220, spendKyat: 2_200_000 },
+  { email: "royal3@futurebite.test",  name: "Emily Wong",    password: "royal123", points: 150, spendKyat: 1_500_000 },
+  { email: "royal4@futurebite.test",  name: "Michael Ross",  password: "royal123", points: 80,  spendKyat: 800_000 },
+  { email: "royal5@futurebite.test",  name: "Lisa Park",     password: "royal123", points: 60,  spendKyat: 600_000 },
+  { email: "royal6@futurebite.test",  name: "David Kim",     password: "royal123", points: 110, spendKyat: 1_100_000 },
+  { email: "royal7@futurebite.test",  name: "Anna Lee",      password: "royal123", points: 300, spendKyat: 3_000_000 },
+  { email: "royal8@futurebite.test",  name: "Tom Baker",     password: "royal123", points: 40,  spendKyat: 400_000 },
+  { email: "royal9@futurebite.test",  name: "Nina Garcia",   password: "royal123", points: 180, spendKyat: 1_800_000 },
+  { email: "royal10@futurebite.test", name: "Chris Evans",   password: "royal123", points: 95,  spendKyat: 950_000 },
 ];
 
 /** One coupon per 100 points, worth 10,000 kyat. */
