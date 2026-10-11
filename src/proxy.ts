@@ -5,6 +5,8 @@ import { getSession, type SessionRecord } from "@/lib/db";
 const ADMIN_ROLES = ["admin", "manager"];
 const KITCHEN_ACCESS_ROLES = ["kitchen", "admin", "manager"];
 const POS_ACCESS_ROLES = ["cashier", "admin", "manager", "waiter", "host"];
+/** Customer-owned areas. Any signed-in role may read these. */
+const CUSTOMER_ROLES = ["customer", "waiter", "host"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -12,7 +14,9 @@ export async function proxy(request: NextRequest) {
   const isAdminPage = pathname.startsWith("/admin");
   const isKitchenPage = pathname.startsWith("/kitchen");
   const isPOSPage = pathname.startsWith("/pos");
-  if (!isAdminPage && !isKitchenPage && !isPOSPage) {
+  const isAccountPage = pathname.startsWith("/account");
+  const isOrderPage = pathname.startsWith("/order");
+  if (!isAdminPage && !isKitchenPage && !isPOSPage && !isAccountPage && !isOrderPage) {
     return NextResponse.next();
   }
 
@@ -45,10 +49,22 @@ export async function proxy(request: NextRequest) {
   if (isPOSPage && !POS_ACCESS_ROLES.includes(role)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
+  // Staff use the POS/admin desks, not the customer account portal.
+  if ((isAccountPage || isOrderPage) && !CUSTOMER_ROLES.includes(role)) {
+    return NextResponse.redirect(
+      new URL(role === "kitchen" ? "/kitchen" : "/admin", request.url)
+    );
+  }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/kitchen/:path*", "/pos/:path*"],
+  matcher: [
+    "/admin/:path*",
+    "/kitchen/:path*",
+    "/pos/:path*",
+    "/account/:path*",
+    "/order/:path*",
+  ],
 };
