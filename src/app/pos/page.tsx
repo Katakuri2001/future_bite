@@ -17,6 +17,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { cn, formatPrice } from "@/lib/utils";
+import AdminLayout from "@/components/admin/AdminLayout";
 import ReceiptView from "@/components/receipts/ReceiptView";
 import type { Receipt } from "@/lib/types";
 
@@ -221,7 +222,7 @@ export default function POSWorkspace() {
 
   if (!authorized) return null;
 
-  return (
+  const workspace = (
     <div className="min-h-screen bg-bg print:hidden">
       {/* Top bar */}
       <header className="sticky top-0 z-40 bg-bg/95 backdrop-blur border-b border-border/50">
@@ -539,4 +540,14 @@ export default function POSWorkspace() {
       )}
     </div>
   );
+
+  // Admins and managers keep the full sidebar while working the till, so they
+  // can reach Royal Customers, orders, inventory and settings without losing
+  // their place. Cashiers, waiters and hosts get the full-screen till, which
+  // maximises the usable screen area on a terminal.
+  if (role === "admin" || role === "manager") {
+    return <AdminLayout>{workspace}</AdminLayout>;
+  }
+
+  return workspace;
 }

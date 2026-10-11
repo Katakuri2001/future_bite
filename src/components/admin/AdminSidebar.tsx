@@ -88,6 +88,8 @@ export default function AdminSidebar({
     <aside
       className={cn(
         "min-h-screen flex flex-col glass border-r border-border/50 transition-all duration-300 ease-in-out",
+        // Navigation never belongs on a printed receipt.
+        "print:hidden",
         collapsed ? "w-16" : "w-60",
         className
       )}
