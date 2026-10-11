@@ -21,16 +21,25 @@ export function localDateString(d: Date = new Date()): string {
 }
 
 /**
- * Format an amount in kyat. Kyat has no minor unit, so amounts are whole
- * numbers — this is the correct formatter for prices in `dishes.price`.
+ * Format a monetary amount.
+ *
+ * Every amount in this system is in kyat — `dishes.price` is documented as
+ * "in kyat (no decimals)" and the DB stores whole numbers. Kyat has no minor
+ * unit, so amounts are rendered as whole numbers with thousands separators.
+ *
+ * This function previously divided by 100 and printed `$`, which assumed cents
+ * and USD. That made a 6,800 kyat dish render as "$68.00" on the menu, on POS
+ * totals, on receipts and in admin revenue figures — a customer-facing pricing
+ * error across the whole application. Fixing it here corrects all 47 call
+ * sites at once.
  */
-export function formatKyat(amount: number): string {
+export function formatPrice(amount: number): string {
   return `${Math.round(Number(amount) || 0).toLocaleString("en-US")} K`;
 }
 
-/** @deprecated Legacy cents/USD formatter. Use `formatKyat` for menu prices. */
-export function formatPrice(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
+/** Alias of {@link formatPrice}, for call sites that prefer to be explicit. */
+export function formatKyat(amount: number): string {
+  return formatPrice(amount);
 }
 
 export function formatDate(date: Date | string): string {

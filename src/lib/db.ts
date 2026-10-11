@@ -1280,7 +1280,7 @@ export async function getRoyalCustomers(filters?: { minSpend?: number; minPoints
       `SELECT u.id, u.email, u.name, u.role, u.points, u.total_spent, u.created_at,
               (SELECT COUNT(*) FROM coupons c WHERE c.user_id = u.id) AS coupon_count,
               (SELECT COUNT(*) FROM coupons c WHERE c.user_id = u.id AND c.is_used = 0) AS active_coupon_count,
-              (SELECT COALESCE(SUM(o.total - COALESCE(o.discount, 0)), 0)
+              (SELECT COALESCE(SUM(o.total), 0)
                  FROM orders o WHERE o.user_id = u.id AND o.payment_status = 'paid') AS verified_spent,
               (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.id AND o.payment_status = 'paid') AS paid_orders,
               (SELECT MAX(o.created_at) FROM orders o WHERE o.user_id = u.id) AS last_order_at
@@ -1298,7 +1298,8 @@ export async function getRoyalCustomers(filters?: { minSpend?: number; minPoints
       name: r.name,
       email: r.email,
       points,
-      // Real money: settled order totals, net of any coupon discount.
+      // Real money: the settled order totals, which already reflect any coupon
+      // discount (a discounted order stores the reduced total).
       verifiedSpent,
       // Stand-in for pre-seeded balances not backed by real orders.
       seededSpent: Math.max(0, (r.total_spent || 0) - verifiedSpent),
