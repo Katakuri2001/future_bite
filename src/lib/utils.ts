@@ -6,6 +6,21 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * Today's date in the *restaurant's local* timezone, as YYYY-MM-DD.
+ *
+ * `toISOString()` converts to UTC first, so in a timezone ahead of UTC (Yangon
+ * is UTC+7) it returns tomorrow's date for the first seven hours of the local
+ * day — which would offer guests a date that is already in the past. Building
+ * the string from local getters avoids the conversion entirely.
+ */
+export function localDateString(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
  * Format an amount in kyat. Kyat has no minor unit, so amounts are whole
  * numbers — this is the correct formatter for prices in `dishes.price`.
  */

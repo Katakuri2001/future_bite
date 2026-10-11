@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
@@ -10,9 +10,16 @@ import {
   Wine,
   DoorOpen,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { tables, reservationTimeSlots } from "@/lib/data";
+import { cn, localDateString } from "@/lib/utils";
+import { reservationTimeSlots } from "@/lib/data";
 import type { TableExperience } from "@/lib/types";
+
+interface AvailableTable {
+  id: string;
+  number: number | string;
+  capacity: number;
+  experience: string;
+}
 
 const experiences = [
   {
@@ -60,8 +67,11 @@ export default function ReservationFlow() {
   const [specialRequests, setSpecialRequests] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmationCode, setConfirmationCode] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const [tables, setTables] = useState<AvailableTable[]>([]);
+  const [loadingTables, setLoadingTables] = useState(false);
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = localDateString();
 
   const limitedSlots = new Set(
     reservationTimeSlots.filter((_, i) => i % 3 === 0 || i % 5 === 0)
@@ -78,14 +88,75 @@ export default function ReservationFlow() {
   const currentStepIndex = steps.findIndex((s) => s.key === step);
 
   const availableTables = tables.filter(
-    (t) =>
-      t.status === "available" &&
-      t.capacity >= guests &&
-      (!experience || t.experience === experience)
+    (t) => t.capacity >= guests && (!experience || t.experience === experience)
   );
+
+  // Real availability from the reservations table, not a static mock list.
+  // Re-runs whenever the date or time changes so the guest always sees live
+  // availability rather than yesterday's answer.
+  useEffect(() => {
+    if (!date || !time) {
+      setTables([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingTables(true);
+    (async () => {
+      try {
+        const params = new URLSearchParams({ date, time, guests: String(guests) });
+        const res = await fetch(`/api/reservations?${params}`);
+        const json = await res.json();
+        if (!cancelled && json.success) setTables(json.availableTables || []);
+      } catch {
+        if (!cancelled) setTables([]);
+      } finally {
+        if (!cancelled) setLoadingTables(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [date, time, guests]);
+
+  /** Build and download a real .ics event for the reservation. */
+  function addToCalendar() {
+    const [h, m] = time.split(":").map(Number);
+    const start = new Date(`${date}T00:00:00`);
+    start.setHours(h, m, 0, 0);
+    const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+
+    const stamp = (d: Date) =>
+      d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//FutureBite//Reservations//EN",
+      "BEGIN:VEVENT",
+      `UID:${confirmationCode}@futurebite`,
+      `DTSTAMP:${stamp(new Date())}`,
+      `DTSTART:${stamp(start)}`,
+      `DTEND:${stamp(end)}`,
+      `SUMMARY:Dinner at FutureBite (${confirmationCode})`,
+      `DESCRIPTION:${guests} guest(s) · ${experience} seating · Confirmation ${confirmationCode}`,
+      "LOCATION:FutureBite, Yangon, Myanmar",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `futurebite-${confirmationCode}.ics`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
+    setSubmitError("");
     try {
       const response = await fetch("/api/reservations", {
         method: "POST",
@@ -98,21 +169,28 @@ export default function ReservationFlow() {
           date,
           time,
           experience,
-          tableId: availableTables[0]?.id || "",
+          // The API resolves this to a real table and guards against
+          // double-booking; it will refuse if nothing is free.
+          tableId: availableTables[0]?.id,
           preferences: [],
           specialRequests,
         }),
       });
       const data = await response.json();
-      if (data.success) {
-        setConfirmationCode(data.data.confirmationCode);
-      } else {
-        setConfirmationCode(`FB-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9999)).padStart(4, "0")}`);
+      if (!response.ok || !data.success) {
+        // Surface the real reason and let the guest retry. Never fabricate a
+        // confirmation — a failed booking must not look like a success.
+        setSubmitError(data.error || "We could not complete your reservation.");
+        setIsSubmitting(false);
+        return;
       }
+      setConfirmationCode(data.data.confirmationCode);
+      setStep("confirmation");
     } catch {
-      setConfirmationCode(`FB-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9999)).padStart(4, "0")}`);
+      setSubmitError(
+        "Connection error. Your reservation was not booked — please try again."
+      );
     }
-    setStep("confirmation");
     setIsSubmitting(false);
   };
 
@@ -142,7 +220,9 @@ export default function ReservationFlow() {
           </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3 justify-center mt-8">
-          <button className="btn-outline text-xs">Add to Calendar</button>
+          <button onClick={addToCalendar} className="btn-outline text-xs">
+            Add to Calendar
+          </button>
           <button
             className="btn-outline text-xs"
             onClick={() => router.push("/")}
@@ -288,16 +368,17 @@ export default function ReservationFlow() {
               Choose your experience
             </h3>
             <p className="text-ivory-muted text-sm mb-8">
-              {availableTables.length} tables available for {guests} guests.
+              {loadingTables
+                ? "Checking availability..."
+                : `${availableTables.length} ${
+                    availableTables.length === 1 ? "table" : "tables"
+                  } available for ${guests} guests.`}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg mx-auto">
               {experiences.map((exp) => {
                 const Icon = exp.icon;
                 const count = tables.filter(
-                  (t) =>
-                    t.experience === exp.type &&
-                    t.status === "available" &&
-                    t.capacity >= guests
+                  (t) => t.experience === exp.type && t.capacity >= guests
                 ).length;
                 return (
                   <button
@@ -346,6 +427,12 @@ export default function ReservationFlow() {
               Complete your reservation.
             </p>
             <div className="max-w-md mx-auto space-y-5">
+              {submitError && (
+                <div className="p-4 bg-error/10 border border-error/30 text-error text-sm">
+                  {submitError}
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs tracking-[0.1em] uppercase text-ivory-dim mb-2">
                   Full Name

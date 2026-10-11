@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Calendar, Clock, Users, ArrowRight } from "lucide-react";
 import { reservationTimeSlots } from "@/lib/data";
+import { localDateString } from "@/lib/utils";
 
 export default function ReservationFinder() {
   const router = useRouter();
@@ -20,7 +21,7 @@ export default function ReservationFinder() {
     router.push(`/reserve?${params.toString()}`);
   };
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = localDateString();
 
   return (
     <section className="section-padding bg-bg-elevated">
