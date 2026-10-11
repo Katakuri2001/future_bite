@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { cn, formatPrice } from "@/lib/utils";
 import AdminLayout from "@/components/admin/AdminLayout";
+import SettleTablePanel from "@/components/pos/SettleTablePanel";
 import ReceiptView from "@/components/receipts/ReceiptView";
 import type { Receipt } from "@/lib/types";
 
@@ -482,6 +483,20 @@ export default function POSWorkspace() {
             )}
             {checkingOut ? "Processing..." : "Complete Sale"}
           </button>
+
+          {/* Tables a waiter opened settle separately: the guest has already
+              eaten, so there is nothing to ring up line by line. */}
+          <div className="mt-4 pt-4 border-t border-border/50">
+            <SettleTablePanel
+              onSettled={(d) =>
+                setCheckoutResult({
+                  receipt: d.receipt,
+                  receiptUrl: d.receiptUrl,
+                  orderNumber: d.order.orderNumber,
+                })
+              }
+            />
+          </div>
         </div>
       </div>
 

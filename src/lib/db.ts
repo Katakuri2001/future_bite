@@ -2193,6 +2193,10 @@ export async function settleExistingOrder(data: {
   paymentMethod?: string;
   receiptType?: string;
   createdBy?: string;
+  /** Royal account to credit. A walk-in table settles with none. */
+  customerId?: string;
+  /** Coupon code to spend; only valid alongside `customerId`. */
+  couponCode?: string;
 }): Promise<{ order: any; receipt: any }> {
   const db = getDB();
   const order = await db
@@ -2215,14 +2219,69 @@ export async function settleExistingOrder(data: {
     .bind(data.orderId)
     .all<any>();
 
+  const lines = items.results || [];
+
+  // A table bill is anonymous unless the cashier attached an account. Once
+  // attached, the account is sticky: it stays on the order afterwards so the
+  // guest's history shows what they ate.
+  const customerId = data.customerId || order.user_id || null;
+  let customerName: string | null = null;
+  if (customerId) {
+    const customer = await db
+      .prepare("SELECT id, name FROM users WHERE id = ? AND role = 'customer'")
+      .bind(customerId)
+      .first<any>();
+    if (!customer) throw new Error("That customer account was not found");
+    customerName = customer.name || null;
+  }
+
+  // Re-price from the dish lines rather than trusting the stored subtotal, so
+  // the discount lands on the same base the guest was quoted.
+  const grossSubtotal = lines.reduce(
+    (s: number, it: any) => s + it.price * it.quantity,
+    0
+  );
+
+  // The discount is applied BEFORE totals are finalised, exactly as the online
+  // checkout does. Subtracting from a finished total would leave tax and
+  // service charge computed on the undiscounted figure and overcharge the guest.
+  let discount = 0;
+  let appliedCoupon: { code: string; amount: number } | null = null;
+  if (data.couponCode) {
+    if (!customerId) {
+      throw new Error("A customer account is required to redeem a coupon");
+    }
+    appliedCoupon = await validateCoupon(customerId, data.couponCode);
+    if (!appliedCoupon) {
+      throw new Error("Invalid, expired or already-used coupon code");
+    }
+    discount = Math.min(appliedCoupon.amount, grossSubtotal);
+  }
+
+  const subtotal = Math.max(0, grossSubtotal - discount);
+  const tax = Math.round(subtotal * 0.1);
+  const serviceCharge = Math.round(subtotal * 0.05);
+  const total = subtotal + tax + serviceCharge;
+
   const settledAt = new Date().toISOString();
   const updated = await db
     .prepare(
       `UPDATE orders SET payment_status = 'paid', status = 'completed',
+              subtotal = ?, tax = ?, service_charge = ?, total = ?,
+              discount = ?, coupon_code = ?, user_id = ?,
               updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
        WHERE id = ? RETURNING *`
     )
-    .bind(data.orderId)
+    .bind(
+      subtotal,
+      tax,
+      serviceCharge,
+      total,
+      discount,
+      appliedCoupon?.code ?? order.coupon_code ?? null,
+      customerId,
+      data.orderId
+    )
     .first<any>();
 
   // The kitchen ticket is finished with the bill.
@@ -2245,17 +2304,18 @@ export async function settleExistingOrder(data: {
     receiptNo,
     orderId: data.orderId,
     orderNumber: order.order_number,
-    customerName: order.customer_name || "Guest",
+    customerName: customerName || "Guest",
     tableNumber: order.table_number,
-    subtotal: order.subtotal,
-    discount: order.discount || 0,
-    tax: order.tax,
-    serviceCharge: order.service_charge,
-    total: order.total,
+    subtotal,
+    discount,
+    couponCode: appliedCoupon?.code ?? null,
+    tax,
+    serviceCharge,
+    total,
     paymentMethod: data.paymentMethod || "cash",
     receiptType: data.receiptType || "e",
     createdBy: data.createdBy || "",
-    items: (items.results || []).map((it: any) => ({
+    items: lines.map((it: any) => ({
       id: it.id,
       name: it.name,
       quantity: it.quantity,
@@ -2278,20 +2338,23 @@ export async function settleExistingOrder(data: {
       order.order_number,
       receipt.customerName,
       order.table_number,
-      order.subtotal,
-      order.tax,
-      order.service_charge,
-      order.total,
+      subtotal,
+      tax,
+      serviceCharge,
+      total,
       receipt.paymentMethod,
       receipt.receiptType,
       receipt.createdBy
     )
     .run();
 
-  // Table orders are usually walk-ins with no account, so this is a no-op for
-  // them — but a table linked to a registered guest still earns Royal points.
-  if (order.user_id) {
-    await awardLoyaltyPoints(order.user_id, order.total, order.id, order.order_number);
+  // Royal points accrue on what the guest actually paid, after any discount.
+  // Runs only on this payment path — an unsettled table mints nothing.
+  if (customerId) {
+    if (appliedCoupon) {
+      await redeemCoupon(customerId, appliedCoupon.code);
+    }
+    await awardLoyaltyPoints(customerId, total, order.id, order.order_number);
   }
 
   await notifyRealtime({ type: "orders" });

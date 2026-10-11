@@ -93,6 +93,8 @@ export async function POST(request: NextRequest) {
         paymentMethod,
         receiptType,
         createdBy: auth.session.name || "cashier",
+        customerId,
+        couponCode,
       });
       return NextResponse.json({
         success: true,
@@ -102,6 +104,8 @@ export async function POST(request: NextRequest) {
             orderNumber: order.order_number,
             tableNumber: order.table_number,
             total: order.total,
+            discount: order.discount || 0,
+            couponCode: order.coupon_code || null,
             status: order.status,
             paymentStatus: order.payment_status,
           },
@@ -111,7 +115,7 @@ export async function POST(request: NextRequest) {
       });
     } catch (e: any) {
       const message = String((e && (e.message || e)) || e);
-      const conflict = /not found|already|settled|cancelled/i.test(message);
+      const conflict = /not found|already|settled|cancelled|required|invalid coupon/i.test(message);
       return NextResponse.json(
         { success: false, error: message },
         { status: conflict ? 409 : 500 }
