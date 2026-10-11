@@ -101,10 +101,10 @@ export default function AdminLayout({
         <Menu size={20} />
       </button>
 
-      <main className={cn(
-        "flex-1 min-w-0 overflow-auto transition-all duration-300 ease-in-out lg:transition-none",
-        isCollapsed ? "lg:ml-16" : "lg:ml-60"
-      )}>
+      <main className="flex-1 min-w-0 overflow-auto transition-all duration-300 ease-in-out">
+        {/* No left margin here: the sidebar is `lg:relative` and occupies its own
+            width in this flex row, so an extra ml-16/ml-60 pushed the content a
+            second sidebar-width to the right. */}
         <div className="p-4 lg:p-6">
           {/* Mobile close button inside sidebar area */}
           <div className="lg:hidden mb-4 flex justify-end">
