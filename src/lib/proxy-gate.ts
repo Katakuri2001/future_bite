@@ -33,7 +33,12 @@ const GUARDED_PREFIXES = [
   "/receipts",
 ];
 
+/**
+ * `/receipts` itself is staff-only, but `/receipts/[id]` is a guest's e-receipt
+ * link and must stay reachable without a session — the id is the capability.
+ */
 export function isGuardedPath(pathname: string): boolean {
+  if (/^\/receipts\/[^/]+$/.test(pathname)) return false;
   return GUARDED_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
   );

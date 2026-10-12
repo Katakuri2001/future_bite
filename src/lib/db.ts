@@ -2837,6 +2837,11 @@ export async function getReceipt(id: string): Promise<any | null> {
     receiptType: row.receipt_type,
     createdBy: row.created_by,
     createdAt: row.created_at,
+    status: row.status || "paid",
+    billedAt: row.billed_at,
+    paidAt: row.paid_at,
+    pointsEarned: row.points_earned || 0,
+    pointsBalance: row.points_balance ?? null,
     items,
   };
 }

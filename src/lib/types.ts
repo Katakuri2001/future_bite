@@ -246,6 +246,11 @@ export interface Receipt {
   receiptType: "e" | "physical";
   createdBy: string;
   createdAt: string;
+  /** Royal points minted by this bill, and the balance it left behind. */
+  pointsEarned?: number;
+  pointsBalance?: number | null;
+  /** unpaid until payment is taken; void means the bill was withdrawn. */
+  status?: string;
   items: ReceiptItem[];
 }
 

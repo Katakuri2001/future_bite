@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { formatPrice } from "@/lib/utils";
 import type { Receipt } from "@/lib/types";
+import { pointsLine } from "@/lib/receipt-points";
 import { restaurant } from "@/lib/data";
 
 const receiptMeta = {
@@ -18,6 +19,11 @@ const receiptMeta = {
  */
 export default function ReceiptView({ receipt }: { receipt: Receipt }) {
   const date = new Date(receipt.createdAt);
+  const points = pointsLine({
+    pointsEarned: receipt.pointsEarned ?? 0,
+    pointsBalance: receipt.pointsBalance ?? null,
+    status: receipt.status,
+  });
   const meta = {
     address: restaurant.address || receiptMeta.address,
     phone: restaurant.phone || receiptMeta.phone,
@@ -140,6 +146,22 @@ export default function ReceiptView({ receipt }: { receipt: Receipt }) {
           </p>
         )}
       </div>
+
+      {/* Royal Points — only shown when a balance was actually earned. A
+          walk-in table has no account, and an unpaid or voided bill has earned
+          nothing; printing "0 points" beside a real total reads as a shortfall. */}
+      {points && (
+        <div className="border-t border-dashed border-neutral-800 pt-3 mb-4 space-y-1">
+          <div className="flex justify-between">
+            <span>Royal Points earned</span>
+            <span>+{points.earned}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>Your balance</span>
+            <span>{points.balance}</span>
+          </div>
+        </div>
+      )}
 
       {/* Payment */}
       <div className="border-t-2 border-dashed border-neutral-800 pt-3 pb-4 flex justify-between uppercase tracking-wider">

@@ -43,6 +43,30 @@ describe("decideSessionGate", () => {
     ).toEqual({ action: "allow" });
   });
 
+  it("lets a guest open their own e-receipt link without a session", () => {
+    // The receipt id is the capability here — a guest who paid at the table
+    // has no account session but must still be able to open their slip.
+    expect(
+      decideSessionGate({
+        pathname: "/receipts/rec-abc123",
+        hasToken: false,
+        session: null,
+        lookupFailed: false,
+      })
+    ).toEqual({ action: "allow" });
+  });
+
+  it("still guards the receipt register itself", () => {
+    expect(
+      decideSessionGate({
+        pathname: "/receipts",
+        hasToken: false,
+        session: null,
+        lookupFailed: false,
+      })
+    ).toEqual({ action: "deny", redirect: "/login" });
+  });
+
   it("still lets a valid session through public pages", () => {
     expect(
       decideSessionGate({ pathname: "/", hasToken: true, session: { id: "s1" }, lookupFailed: false })
