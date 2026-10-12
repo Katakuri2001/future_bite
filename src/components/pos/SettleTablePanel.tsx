@@ -153,6 +153,39 @@ export default function SettleTablePanel({
   const payableTotal = payableSubtotal + payableTax + payableService;
   const pointsEarned = Math.floor(payableTotal / 10000);
 
+  async function issueBill() {
+    if (!selected) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/pos/receipts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId: selected.orderId,
+          customerId: customer?.id,
+          couponCode: couponCode ?? undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        setError(data.error || "Could not issue that bill");
+        return;
+      }
+      setFlash(
+        `${data.data.receiptNo} issued — find it under Table bills to take payment`
+      );
+      setTimeout(() => setFlash(null), 4000);
+      setSelected(null);
+      resetGuest();
+      await loadTables();
+    } catch {
+      setError("Connection error — the bill was not issued.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function settle() {
     if (!selected) return;
     setBusy(true);
@@ -454,6 +487,18 @@ export default function SettleTablePanel({
                 <UserCheck size={13} />
               )}
               {busy ? "Settling…" : `Settle ${formatKyat(payableTotal)}`}
+            </button>
+
+            {/* Issuing a bill takes no payment: the guest takes the slip away
+                and pays at the table or on the way out. The bill locks this
+                table until it is paid or voided. */}
+            <button
+              onClick={issueBill}
+              disabled={busy}
+              className="w-full mt-2 py-2 text-[10px] tracking-[0.15em] uppercase border border-border-light text-ivory-dim hover:border-gold hover:text-gold transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+            >
+              <Receipt size={11} />
+              Issue bill, pay later
             </button>
           </div>
         </div>

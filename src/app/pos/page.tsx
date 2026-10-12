@@ -19,6 +19,7 @@ import {
 import { cn, formatPrice } from "@/lib/utils";
 import AdminLayout from "@/components/admin/AdminLayout";
 import SettleTablePanel from "@/components/pos/SettleTablePanel";
+import ReceiptsPanel from "@/components/pos/ReceiptsPanel";
 import ReceiptView from "@/components/receipts/ReceiptView";
 import type { Receipt } from "@/lib/types";
 
@@ -496,6 +497,11 @@ export default function POSWorkspace() {
                 })
               }
             />
+          </div>
+
+          {/* Bills issued but not yet paid, found by table. */}
+          <div className="mt-4 pt-4 border-t border-border/50">
+            <ReceiptsPanel />
           </div>
         </div>
       </div>
