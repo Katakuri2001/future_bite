@@ -133,6 +133,25 @@ export async function takeTableOrder(data: {
     .bind(tableNumber)
     .first<any>();
 
+  // A billed table is locked. The guest is holding a printed bill for these
+  // exact dishes, so appending more would make the bill disagree with the tab.
+  // Void the bill and issue a fresh one instead.
+  if (existing) {
+    const openBill = await db
+      .prepare(
+        `SELECT id, receipt_no FROM receipts
+          WHERE order_id = ? AND status = 'unpaid' LIMIT 1`
+      )
+      .bind(existing.id)
+      .first<any>();
+
+    if (openBill) {
+      throw new Error(
+        `This table has already been billed (${openBill.receipt_no}) — void the bill before adding more`
+      );
+    }
+  }
+
   if (existing) {
     await db.batch(insertItem(existing.id));
 

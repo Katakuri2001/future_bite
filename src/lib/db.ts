@@ -1,4 +1,5 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { canIssueBill } from "./receipt-lifecycle";
 
 export type UserRole =
   | "admin"
@@ -2429,6 +2430,373 @@ export async function settleExistingOrder(data: {
   await notifyRealtime({ type: "orders" });
   await notifyRealtime({ type: "receipts" });
   return { order: updated, receipt };
+}
+
+/**
+ * Issue a bill for a table that has already eaten.
+ *
+ * Creates an UNPAID receipt and marks the order billed, so the waiter can no
+ * longer append dishes to it. No money moves and no points are minted here —
+ * payment happens later via `payReceipt`, and a bill that is voided in the
+ * meantime costs nothing but the reprint.
+ *
+ * Re-prices from the dish lines rather than the stored subtotal, so the coupon
+ * discount lands on the base the guest was quoted, and tax and service are
+ * computed on the discounted figure.
+ */
+export async function issueTableBill(data: {
+  orderId: string;
+  issuedBy?: string;
+  customerId?: string;
+  couponCode?: string;
+}): Promise<{ receipt: any; order: any }> {
+  const db = getDB();
+
+  const order = await db
+    .prepare("SELECT * FROM orders WHERE id = ?")
+    .bind(data.orderId)
+    .first<any>();
+  if (!order) throw new Error("Order not found");
+
+  // An unpaid bill already on this table blocks a second one.
+  const existingBill = await db
+    .prepare(
+      `SELECT id, status FROM receipts
+        WHERE order_id = ? AND status = 'unpaid' LIMIT 1`
+    )
+    .bind(data.orderId)
+    .first<any>();
+
+  const check = canIssueBill(
+    {
+      paymentStatus: order.payment_status,
+      status: order.status,
+    },
+    existingBill as any
+  );
+  if (!check.ok) throw new Error(check.reason);
+
+  const { results: itemRows } = await db
+    .prepare(
+      `SELECT id, name, quantity, price, variants, addons, special_instructions
+         FROM order_items WHERE order_id = ? ORDER BY created_at ASC`
+    )
+    .bind(data.orderId)
+    .all<any>();
+  const lines = itemRows || [];
+  if (lines.length === 0) throw new Error("This table has nothing to bill");
+
+  // The account is captured now so the guest's name and any coupon can be
+  // printed on the bill the waiter hands over.
+  const customerId = data.customerId || order.user_id || null;
+  let customerName: string | null = null;
+  if (customerId) {
+    const customer = await db
+      .prepare("SELECT id, name FROM users WHERE id = ? AND role = 'customer'")
+      .bind(customerId)
+      .first<any>();
+    if (!customer) throw new Error("That customer account was not found");
+    customerName = customer.name || null;
+  }
+
+  const grossSubtotal = lines.reduce(
+    (s: number, it: any) => s + it.price * it.quantity,
+    0
+  );
+
+  // Discount before totals, exactly as the online checkout does — subtracting
+  // from a finished total would leave tax and service charge computed on the
+  // undiscounted figure.
+  let discount = 0;
+  let appliedCoupon: { code: string; amount: number } | null = null;
+  if (data.couponCode) {
+    if (!customerId) {
+      throw new Error("A customer account is required to redeem a coupon");
+    }
+    appliedCoupon = await validateCoupon(customerId, data.couponCode);
+    if (!appliedCoupon) {
+      throw new Error("Invalid, expired or already-used coupon code");
+    }
+    discount = Math.min(appliedCoupon.amount, grossSubtotal);
+  }
+
+  const subtotal = Math.max(0, grossSubtotal - discount);
+  const tax = Math.round(subtotal * 0.1);
+  const serviceCharge = Math.round(subtotal * 0.05);
+  const total = subtotal + tax + serviceCharge;
+
+  const receiptNo = await nextUniqueNumber(
+    "receipt",
+    "receipts",
+    "receipt_no",
+    (n) => `R-${new Date().getFullYear()}-${String(n).padStart(4, "0")}`
+  );
+  const receiptId = `rec-${generateToken().slice(0, 10)}`;
+  const billedAt = new Date().toISOString();
+
+  const receipt = {
+    id: receiptId,
+    receiptNo,
+    orderId: data.orderId,
+    orderNumber: order.order_number,
+    customerName: customerName || "Guest",
+    tableNumber: order.table_number,
+    subtotal,
+    discount,
+    couponCode: appliedCoupon?.code ?? null,
+    tax,
+    serviceCharge,
+    total,
+    status: "unpaid",
+    paymentMethod: null,
+    receiptType: "e",
+    createdBy: data.issuedBy || "",
+    items: lines.map((it: any) => ({
+      id: it.id,
+      name: it.name,
+      quantity: it.quantity,
+      price: it.price,
+      variants: safeJson(it.variants),
+      addons: safeJson(it.addons),
+      specialInstructions: it.special_instructions || "",
+    })),
+    billedAt,
+    paidAt: null,
+  };
+
+  await db.batch([
+    db
+      .prepare(
+        `INSERT INTO receipts
+           (id, branch_id, receipt_no, order_id, order_number, customer_name,
+            table_number, subtotal, discount, coupon_code, tax, service_charge,
+            total, payment_method, receipt_type, created_by, status,
+            billed_at, issued_by)
+         VALUES (?, 'default-branch', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, ?)`
+      )
+      .bind(
+        receipt.id,
+        receipt.receiptNo,
+        order.id,
+        order.order_number,
+        receipt.customerName,
+        order.table_number,
+        subtotal,
+        discount,
+        appliedCoupon?.code ?? null,
+        tax,
+        serviceCharge,
+        total,
+        "cash",
+        receipt.receiptType,
+        receipt.createdBy,
+        billedAt,
+        data.issuedBy || null
+      ),
+    // The bill is locked in: the stored figures become what the guest owes, and
+    // the tab is stamped with the account so a later append cannot change it.
+    db
+      .prepare(
+        `UPDATE orders SET subtotal = ?, tax = ?, service_charge = ?, total = ?,
+                discount = ?, coupon_code = ?, user_id = ?,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+          WHERE id = ?`
+      )
+      .bind(
+        subtotal,
+        tax,
+        serviceCharge,
+        total,
+        discount,
+        appliedCoupon?.code ?? null,
+        customerId,
+        order.id
+      ),
+  ]);
+
+  await notifyRealtime({ type: "receipts" });
+  return { receipt, order };
+}
+
+/**
+ * Take payment for an issued bill.
+ *
+ * This is the only place a table receipt earns points or spends a coupon: the
+ * moment of payment is the only moment money is actually received, and points
+ * on an unpaid tab would be minted for a bill that might be voided.
+ *
+ * Idempotent by refusal rather than by no-op — a double-tap at the till
+ * returns a conflict instead of paying twice and minting points twice.
+ */
+export async function payReceipt(data: {
+  receiptId: string;
+  paymentMethod?: string;
+  receiptType?: string;
+  createdBy?: string;
+}): Promise<{ receipt: any; pointsEarned: number }> {
+  const db = getDB();
+  const receipt = await db
+    .prepare("SELECT * FROM receipts WHERE id = ?")
+    .bind(data.receiptId)
+    .first<any>();
+
+  if (!receipt) throw new Error("Receipt not found");
+  if (receipt.status === "paid") {
+    throw new Error("This bill has already been paid");
+  }
+  if (receipt.status === "void") {
+    throw new Error("This bill was voided");
+  }
+  if (!receipt.order_id) {
+    throw new Error("This bill is not linked to an order");
+  }
+
+  const paidAt = new Date().toISOString();
+  const method = data.paymentMethod || "cash";
+
+  // Points accrue on what the guest actually pays, after any discount.
+  let pointsEarned = 0;
+  let pointsBalance: number | null = null;
+  const customerId = await orderCustomerId(receipt.order_id);
+  if (customerId) {
+    // The coupon was resolved and applied when the bill was issued, so tax and
+    // service charge were computed on the discounted base. It is only consumed
+    // now — an issued-but-voided bill must not burn the guest's coupon.
+    if (receipt.coupon_code) {
+      await redeemCoupon(customerId, receipt.coupon_code);
+    }
+    pointsBalance = await awardLoyaltyPointsReturningBalance(
+      customerId,
+      receipt.total,
+      receipt.order_id,
+      receipt.order_number
+    );
+    pointsEarned = pointsForAmount(receipt.total);
+  }
+
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE receipts SET status = 'paid', paid_at = ?, payment_method = ?,
+                receipt_type = COALESCE(?, receipt_type),
+                created_by = COALESCE(?, created_by),
+                points_earned = ?, points_balance = ?
+          WHERE id = ?`
+      )
+      .bind(
+        paidAt,
+        method,
+        data.receiptType ?? null,
+        data.createdBy ?? null,
+        pointsEarned,
+        pointsBalance,
+        receipt.id
+      ),
+    db
+      .prepare(
+        `UPDATE orders SET payment_status = 'paid', status = 'completed',
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+          WHERE id = ?`
+      )
+      .bind(receipt.order_id),
+    db
+      .prepare(
+        `UPDATE kitchen_orders SET status = 'completed',
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+          WHERE order_id = ?`
+      )
+      .bind(receipt.order_id),
+  ]);
+
+  await notifyRealtime({ type: "orders" });
+  await notifyRealtime({ type: "receipts" });
+
+  const updated = await db
+    .prepare("SELECT * FROM receipts WHERE id = ?")
+    .bind(receipt.id)
+    .first<any>();
+
+  return { receipt: updated, pointsEarned };
+}
+
+/**
+ * Void an unpaid bill, freeing the table for further orders.
+ *
+ * Soft: the row stays so the register records that a bill was raised and
+ * withdrawn. Nothing was paid, so nothing needs unwinding — no points were
+ * minted and no coupon redeemed.
+ */
+export async function voidReceipt(data: {
+  receiptId: string;
+  reason?: string;
+}): Promise<any> {
+  const db = getDB();
+  const receipt = await db
+    .prepare("SELECT * FROM receipts WHERE id = ?")
+    .bind(data.receiptId)
+    .first<any>();
+
+  if (!receipt) throw new Error("Receipt not found");
+  if (receipt.status !== "unpaid") {
+    throw new Error(
+      receipt.status === "paid"
+        ? "A paid bill cannot be voided"
+        : "This bill is already void"
+    );
+  }
+
+  const voided = await db
+    .prepare(
+      `UPDATE receipts SET status = 'void', voided_at = ?, void_reason = ?
+        WHERE id = ? RETURNING *`
+    )
+    .bind(new Date().toISOString(), data.reason || null, data.receiptId)
+    .first<any>();
+
+  // The table is open again: the order keeps its original totals so the waiter
+  // can add more, and a fresh bill re-prices from the dish lines.
+  await db
+    .prepare(
+      `UPDATE orders SET coupon_code = NULL,
+              updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+        WHERE id = ? AND payment_status = 'pending'`
+    )
+    .bind(receipt.order_id)
+    .run();
+
+  await notifyRealtime({ type: "receipts" });
+  return voided;
+}
+
+/** The customer a bill should credit, if the order has one attached. */
+async function orderCustomerId(orderId: string): Promise<string | null> {
+  const row = await getDB()
+    .prepare("SELECT user_id FROM orders WHERE id = ?")
+    .bind(orderId)
+    .first<any>();
+  return row?.user_id || null;
+}
+
+/**
+ * Award points and report the resulting balance.
+ *
+ * `awardLoyaltyPoints` deliberately returns nothing, but a receipt needs to
+ * print the balance the guest was left with — and a reprint months later must
+ * show what it was then, not what it is now. So the balance is read back here
+ * and stored on the receipt.
+ */
+async function awardLoyaltyPointsReturningBalance(
+  userId: string,
+  orderTotal: number,
+  orderId: string,
+  orderNumber?: string
+): Promise<number> {
+  await awardLoyaltyPoints(userId, orderTotal, orderId, orderNumber);
+  const row = await getDB()
+    .prepare("SELECT points FROM users WHERE id = ?")
+    .bind(userId)
+    .first<any>();
+  return row?.points ?? 0;
 }
 
 export async function getReceipt(id: string): Promise<any | null> {
