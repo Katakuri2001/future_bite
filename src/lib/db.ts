@@ -565,9 +565,40 @@ export async function updateDish(id: string, updates: any): Promise<any> {
   return getDishById(id);
 }
 
+/**
+ * Remove a dish from the menu without destroying its history.
+ *
+ * A hard DELETE cannot work here: `order_items.menu_item_id` and
+ * `menu_set_items.dish_id` both reference `dishes(id)` with no ON DELETE, and
+ * `PRAGMA foreign_keys` is ON, so deleting any dish that has ever been ordered
+ * fails with a FOREIGN KEY constraint error and the route returns a bare 500
+ * while the dish silently remains.
+ *
+ * Soft-deleting keeps every past receipt and kitchen ticket intact — which is
+ * what a receipt register needs — while removing the dish from the customer
+ * menu, which `/api/menu` already does by filtering on `is_available`.
+ *
+ * Also detaches the dish from any menu set so a retired dish stops appearing
+ * in current tasting menus.
+ */
 export async function deleteDish(id: string): Promise<boolean> {
-  await getDB().prepare("DELETE FROM dishes WHERE id = ?").bind(id).run();
-  return true;
+  const result: any = await getDB().batch([
+    getDB()
+      .prepare(
+        `UPDATE dishes SET is_available = 0,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+          WHERE id = ?`
+      )
+      .bind(id),
+    getDB()
+      .prepare("DELETE FROM menu_set_items WHERE dish_id = ?")
+      .bind(id),
+  ]);
+
+  // D1 batch results are per-statement; the UPDATE is first, so a miss shows
+  // up as zero changes and the caller can report "not found" honestly.
+  const changed = Number(result?.[0]?.meta?.changes ?? 0);
+  return changed > 0;
 }
 
 // ---- Menu Sets (named sets of dishes — tasting menus / combos) ----

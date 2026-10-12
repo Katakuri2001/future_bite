@@ -54,8 +54,20 @@ export async function DELETE(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   if (id) {
-    await deleteDish(id);
-    return NextResponse.json({ success: true });
+    // Soft delete: the row survives so past receipts and order history keep
+    // their dish name and price. Returns false when no such dish exists.
+    const removed = await deleteDish(id);
+    if (!removed) {
+      return NextResponse.json(
+        { success: false, error: "Dish not found" },
+        { status: 404 }
+      );
+    }
+    return NextResponse.json({
+      success: true,
+      data: { id, removed: true },
+      message: "Dish removed from the menu. Past orders keep their record.",
+    });
   }
-  return NextResponse.json({ success: false, error: "Dish not found" }, { status: 404 });
+  return NextResponse.json({ success: false, error: "id is required" }, { status: 400 });
 }
