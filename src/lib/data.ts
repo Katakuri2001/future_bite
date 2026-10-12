@@ -343,20 +343,3 @@ export const galleryImages: GalleryImage[] = [
 export const reservationTimeSlots = [
   "17:30", "18:00", "18:30", "19:00", "19:30", "20:00", "20:30", "21:00", "21:30",
 ];
-
-export const adminStats = {
-  todayReservations: 12,
-  todayOrders: 47,
-  currentCovers: 28,
-  kitchenQueue: 3,
-  revenue: 2850000,
-  averageOrderValue: 60600,
-  occupancy: 78,
-  popularDishes: [
-    { name: "Wagyu A5 Omakase", orders: 18 },
-    { name: "Truffle Risotto Cosmos", orders: 15 },
-    { name: "Black Cod Stellaris", orders: 12 },
-    { name: "Nebula Tartare", orders: 10 },
-    { name: "Chocolate Eclipse", orders: 9 },
-  ],
-};

@@ -9,9 +9,11 @@ import {
   TrendingUp,
   ChefHat,
   Clock,
+  AlertTriangle,
 } from "lucide-react";
 import { formatPrice } from "@/lib/utils";
 import SalesPanel from "@/components/admin/SalesPanel";
+import { displayStats } from "./overview-stats";
 
 interface PopularDish {
   name: string;
@@ -32,35 +34,27 @@ interface AnalyticsStats {
 
 export default function AdminOverview() {
   const [stats, setStats] = useState<AnalyticsStats | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/admin/analytics")
       .then((res) => res.json())
       .then((data) => {
-        if (data.success) setStats(data.data);
+        if (data.success) {
+          setStats(data.data);
+          setError(null);
+        } else {
+          setError(data.error || "Could not load analytics");
+        }
       })
-      .catch(() => {});
+      .catch(() => setError("Could not reach the server"));
   }, []);
 
-  const defaultStats = {
-    todayReservations: 12,
-    todayOrders: 47,
-    todayReceipts: 0,
-    currentCovers: 28,
-    kitchenQueue: 3,
-    revenue: 2850000,
-    averageOrderValue: 60600,
-    occupancy: 78,
-    popularDishes: [
-      { name: "Wagyu A5 Omakase", orders: 18 },
-      { name: "Truffle Risotto Cosmos", orders: 15 },
-      { name: "Black Cod Stellaris", orders: 12 },
-      { name: "Nebula Tartare", orders: 10 },
-      { name: "Chocolate Eclipse", orders: 9 },
-    ],
-  };
-
-  const data = stats || defaultStats;
+  // Never invent figures. If the fetch failed, the tiles read zero and the
+  // banner below says so, rather than showing a plausible-looking revenue
+  // number that an owner might act on.
+  const shown = displayStats(stats, error);
+  const data = shown;
 
   const statItems = [
     { label: "Today's Reservations", value: data.todayReservations, icon: CalendarDays, color: "text-gold" },
@@ -73,6 +67,15 @@ export default function AdminOverview() {
 
   return (
     <div>
+      {shown.stale && (
+        <div className="mb-6 p-3 bg-warning/10 border border-warning/30 text-warning text-sm flex items-center gap-2">
+          <AlertTriangle size={14} className="shrink-0" />
+          {error
+            ? `Dashboard data unavailable: ${error}. Figures below are not real.`
+            : "Loading dashboard data…"}
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-xl font-bold text-ivory">Dashboard</h1>
