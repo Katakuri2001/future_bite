@@ -439,6 +439,30 @@ export async function getDishById(id: string) {
 }
 
 /** Fetch full rows for a set of dish ids (POS checkout price validation). */
+/**
+ * Resolve addons by id for checkout.
+ *
+ * The client sends ids and quantities only; every price comes from here, so a
+ * tampered request cannot set its own amounts at the point of payment.
+ */
+export async function getAddonsByIds(ids: string[]): Promise<any[]> {
+  const unique = [...new Set(ids)].filter(Boolean);
+  if (unique.length === 0) return [];
+  const placeholders = unique.map(() => "?").join(",");
+  const { results } = await getDB()
+    .prepare(
+      `SELECT id, name, price, is_available FROM addons
+        WHERE id IN (${placeholders}) AND is_available = 1`
+    )
+    .bind(...unique)
+    .all<any>();
+  return results.map((a: any) => ({
+    id: a.id,
+    name: a.name,
+    price: a.price,
+  }));
+}
+
 export async function getDishesByIds(ids: string[]): Promise<any[]> {
   const unique = [...new Set(ids)].filter(Boolean);
   if (unique.length === 0) return [];

@@ -1,13 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { createPaidSale, getDishesByIds, getDB, settleExistingOrder } from "@/lib/db";
+import {
+  createPaidSale,
+  getDishesByIds,
+  getAddonsByIds,
+  getDB,
+  settleExistingOrder,
+} from "@/lib/db";
 import { requirePOS } from "@/lib/auth";
+import { priceCartLine, AddonError } from "@/lib/pricing";
 
 const itemSchema = z.object({
   menuItemId: z.string().min(1),
   quantity: z.number().int().positive(),
+  /**
+   * Ids and quantities only. A price field is deliberately absent: addon
+   * amounts are the server's to decide. Sending one is rejected outright so a
+   * caller cannot believe it had any effect.
+   */
   addons: z
-    .array(z.object({ name: z.string(), price: z.number().min(0) }))
+    .array(
+      z.object({
+        id: z.string().min(1),
+        quantity: z.number().int().positive().max(50).optional(),
+      })
+    )
     .optional()
     .default([]),
   specialInstructions: z.string().optional().default(""),
@@ -128,6 +145,14 @@ export async function POST(request: NextRequest) {
   const cart = items!;
   const dishes = await getDishesByIds(cart.map((i) => i.menuItemId));
   const dishMap = new Map(dishes.map((d) => [d.id, d]));
+
+  // One catalogue read for the whole cart rather than one per line.
+  const addonMap = new Map(
+    (await getAddonsByIds(
+      cart.flatMap((line) => (line.addons || []).map((a) => a.id))
+    )).map((a: any) => [a.id, a])
+  );
+
   const validatedItems: any[] = [];
   for (const line of cart) {
     const dish = dishMap.get(line.menuItemId);
@@ -143,15 +168,31 @@ export async function POST(request: NextRequest) {
         { status: 409 }
       );
     }
-    const addons = line.addons || [];
-    const unitPrice = dish.price + addons.reduce((s, a) => s + a.price, 0);
+    // Addon amounts are resolved from the server catalogue, never the request.
+    let priced;
+    try {
+      priced = priceCartLine(dish, line.addons, addonMap);
+    } catch (e) {
+      if (e instanceof AddonError) {
+        return NextResponse.json(
+          { success: false, error: e.message },
+          { status: 400 }
+        );
+      }
+      throw e;
+    }
     validatedItems.push({
       menuItemId: dish.id,
       name: dish.name,
       quantity: line.quantity,
-      price: unitPrice,
+      price: priced.unitPrice,
       variants: [],
-      addons,
+      addons: priced.addons.map((a) => ({
+        id: a.id,
+        name: a.name,
+        price: a.price,
+        quantity: a.quantity,
+      })),
       specialInstructions: line.specialInstructions,
     });
   }
