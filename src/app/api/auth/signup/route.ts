@@ -5,9 +5,35 @@ import {
   createSession,
   sanitizeUser,
 } from "@/lib/db";
+import {
+  sessionCookieOptions,
+  SESSION_MAX_AGE_SECONDS,
+} from "@/lib/auth-security";
+import { enforceAuthRateLimit } from "@/lib/auth-throttle";
+import { assertSameOrigin } from "@/lib/csrf";
 
 export async function POST(request: NextRequest) {
-  const { email, password, name } = await request.json();
+  const csrf = assertSameOrigin(request);
+  if (csrf) return csrf;
+
+  // Signup is an unauthenticated write plus a full PBKDF2, so it is throttled
+  // exactly like login.
+  const limited = await enforceAuthRateLimit(request, null);
+  if (limited) return limited;
+
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { success: false, error: "Invalid request body" },
+      { status: 400 }
+    );
+  }
+
+  const email = body?.email;
+  const password = body?.password;
+  const name = body?.name;
 
   if (!email || !password) {
     return NextResponse.json(
@@ -17,6 +43,9 @@ export async function POST(request: NextRequest) {
   }
 
   const normalizedEmail = String(email).toLowerCase();
+
+  const perAccount = await enforceAuthRateLimit(request, normalizedEmail);
+  if (perAccount) return perAccount;
 
   const existing = await findUserByEmail(normalizedEmail);
   if (existing) {
@@ -47,10 +76,6 @@ export async function POST(request: NextRequest) {
     success: true,
     data: { user: sanitizeUser(user), token },
   });
-  res.cookies.set("token", token, {
-    httpOnly: true,
-    maxAge: 60 * 60 * 24 * 7,
-    path: "/",
-  });
+  res.cookies.set("token", token, sessionCookieOptions(SESSION_MAX_AGE_SECONDS));
   return res;
 }
