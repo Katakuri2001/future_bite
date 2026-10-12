@@ -1136,13 +1136,20 @@ export async function awardLoyaltyPoints(
   // Points accrue on the amount actually paid, after any coupon discount, so a
   // discounted order cannot inflate the points balance.
   const pointsEarned = pointsForAmount(orderTotal);
-  if (pointsEarned <= 0) return;
 
   const db = getDB();
+  // Lifetime spend records money received, so it accrues on EVERY settled bill
+  // — including one too small to earn a point. Returning early below would
+  // have silently skipped bills under the points threshold.
   await db
-    .prepare("UPDATE users SET points = points + ?, total_spent = total_spent + ? WHERE id = ?")
-    .bind(pointsEarned, orderTotal, userId)
+    .prepare(
+      "UPDATE users SET total_spent = total_spent + ?, points = points + ? WHERE id = ?"
+    )
+    .bind(orderTotal, pointsEarned, userId)
     .run();
+
+  // No points means no new milestone to unlock.
+  if (pointsEarned <= 0) return;
 
   await db
     .prepare(
@@ -1970,8 +1977,8 @@ export async function createReceipt(data: any): Promise<any> {
   const id = data.id || `rec-${generateToken().slice(0, 8)}`;
   await getDB()
     .prepare(
-      `INSERT INTO receipts (id, branch_id, receipt_no, order_id, order_number, customer_name, table_number, subtotal, tax, service_charge, total, payment_method, receipt_type, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO receipts (id, branch_id, receipt_no, order_id, order_number, customer_name, table_number, subtotal, discount, coupon_code, tax, service_charge, total, payment_method, receipt_type, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -1982,6 +1989,8 @@ export async function createReceipt(data: any): Promise<any> {
       data.customerName || "Guest",
       data.tableNumber || null,
       parseInt(data.subtotal) || 0,
+      parseInt(data.discount) || 0,
+      data.couponCode || null,
       parseInt(data.tax) || 0,
       parseInt(data.serviceCharge) || 0,
       parseInt(data.total) || 0,
@@ -2081,6 +2090,7 @@ export async function createPaidSale(data: any): Promise<{
     tableNumber: data.tableNumber || null,
     subtotal,
     discount,
+    couponCode: appliedCoupon?.code ?? null,
     tax,
     serviceCharge,
     total,
@@ -2142,8 +2152,8 @@ export async function createPaidSale(data: any): Promise<{
     ),
     db
       .prepare(
-        `INSERT INTO receipts (id, branch_id, receipt_no, order_id, order_number, customer_name, table_number, subtotal, tax, service_charge, total, payment_method, receipt_type, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO receipts (id, branch_id, receipt_no, order_id, order_number, customer_name, table_number, subtotal, discount, coupon_code, tax, service_charge, total, payment_method, receipt_type, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         receipt.id,
@@ -2154,6 +2164,8 @@ export async function createPaidSale(data: any): Promise<{
         receipt.customerName,
         order.tableNumber,
         subtotal,
+        discount,
+        appliedCoupon?.code ?? null,
         tax,
         serviceCharge,
         total,
@@ -2328,8 +2340,8 @@ export async function settleExistingOrder(data: {
 
   await db
     .prepare(
-      `INSERT INTO receipts (id, branch_id, receipt_no, order_id, order_number, customer_name, table_number, subtotal, tax, service_charge, total, payment_method, receipt_type, created_by)
-       VALUES (?, 'default-branch', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO receipts (id, branch_id, receipt_no, order_id, order_number, customer_name, table_number, subtotal, discount, coupon_code, tax, service_charge, total, payment_method, receipt_type, created_by)
+       VALUES (?, 'default-branch', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       receipt.id,
@@ -2339,6 +2351,8 @@ export async function settleExistingOrder(data: {
       receipt.customerName,
       order.table_number,
       subtotal,
+      discount,
+      appliedCoupon?.code ?? null,
       tax,
       serviceCharge,
       total,
@@ -2391,6 +2405,8 @@ export async function getReceipt(id: string): Promise<any | null> {
     customerName: row.customer_name,
     tableNumber: row.table_number,
     subtotal: row.subtotal,
+    discount: row.discount || 0,
+    couponCode: row.coupon_code || null,
     tax: row.tax,
     serviceCharge: row.service_charge,
     total: row.total,
@@ -2422,6 +2438,11 @@ export async function listReceipts(
     orderNumber: r.order_number,
     customerName: r.customer_name,
     tableNumber: r.table_number,
+    subtotal: r.subtotal,
+    discount: r.discount || 0,
+    couponCode: r.coupon_code || null,
+    tax: r.tax,
+    serviceCharge: r.service_charge,
     total: r.total,
     paymentMethod: r.payment_method,
     receiptType: r.receipt_type,

@@ -106,10 +106,22 @@ export default function ReceiptView({ receipt }: { receipt: Receipt }) {
 
       {/* Totals */}
       <div className="space-y-1 mb-4">
+        {/* `subtotal` is stored net of any coupon. Showing it raw would give a
+            guest who was quoted 15,640 a slip reading "Subtotal 3,600" with no
+            reason why. Gross = net + discount, which always equals the item
+            lines above, so the bill stays checkable by hand. */}
         <div className="flex justify-between">
           <span>Subtotal</span>
-          <span>{formatPrice(receipt.subtotal)}</span>
+          <span>{formatPrice(receipt.subtotal + (receipt.discount || 0))}</span>
         </div>
+        {receipt.discount > 0 && (
+          <div className="flex justify-between text-neutral-600">
+            <span>
+              Coupon{receipt.couponCode ? ` ${receipt.couponCode}` : ""}
+            </span>
+            <span>− {formatPrice(receipt.discount)}</span>
+          </div>
+        )}
         <div className="flex justify-between">
           <span>Tax (10%)</span>
           <span>{formatPrice(receipt.tax)}</span>
@@ -122,6 +134,11 @@ export default function ReceiptView({ receipt }: { receipt: Receipt }) {
           <span>TOTAL</span>
           <span>{formatPrice(receipt.total)}</span>
         </div>
+        {receipt.discount > 0 && (
+          <p className="text-[10px] text-neutral-500 pt-1">
+            Saved {formatPrice(receipt.discount)}
+          </p>
+        )}
       </div>
 
       {/* Payment */}

@@ -235,6 +235,10 @@ export interface Receipt {
   customerName: string;
   tableNumber: number | null;
   subtotal: number;
+  /** Coupon value already deducted from `subtotal`. */
+  discount: number;
+  /** Coupon code that produced `discount`, when one was used. */
+  couponCode: string | null;
   tax: number;
   serviceCharge: number;
   total: number;
