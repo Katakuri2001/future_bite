@@ -1,5 +1,6 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { canIssueBill } from "./receipt-lifecycle";
+import { newPublicId, isLegacyPublicId } from "./public-id";
 
 export type UserRole =
   | "admin"
@@ -2030,7 +2031,7 @@ export async function createReceipt(data: any): Promise<any> {
     (await nextUniqueNumber("receipt", "receipts", "receipt_no", (n) =>
       `R-${year}-${String(n).padStart(4, "0")}`
     ));
-  const id = data.id || `rec-${generateToken().slice(0, 8)}`;
+  const id = data.id || newPublicId("rec");
   await getDB()
     .prepare(
       `INSERT INTO receipts (id, branch_id, receipt_no, order_id, order_number, customer_name, table_number, subtotal, discount, coupon_code, tax, service_charge, total, payment_method, receipt_type, created_by)
@@ -2136,7 +2137,7 @@ export async function createPaidSale(data: any): Promise<{
     "receipt_no",
     (n) => `R-${year}-${String(n).padStart(4, "0")}`
   );
-  const receiptId = data.receiptId || `rec-${generateToken().slice(0, 8)}`;
+  const receiptId = data.receiptId || newPublicId("rec");
   const receipt = {
     id: receiptId,
     receiptNo,
@@ -2366,7 +2367,7 @@ export async function settleExistingOrder(data: {
     "receipt_no",
     (n) => `R-${new Date().getFullYear()}-${String(n).padStart(4, "0")}`
   );
-  const receiptId = `rec-${generateToken().slice(0, 8)}`;
+  const receiptId = newPublicId("rec");
   const receipt = {
     id: receiptId,
     receiptNo,
@@ -2531,7 +2532,7 @@ export async function issueTableBill(data: {
     "receipt_no",
     (n) => `R-${new Date().getFullYear()}-${String(n).padStart(4, "0")}`
   );
-  const receiptId = `rec-${generateToken().slice(0, 10)}`;
+  const receiptId = newPublicId("rec");
   const billedAt = new Date().toISOString();
 
   const receipt = {
@@ -2800,6 +2801,9 @@ async function awardLoyaltyPointsReturningBalance(
 }
 
 export async function getReceipt(id: string): Promise<any | null> {
+  // A guest may still hold a link from before the entropy fix. Those ids carry
+  // only 32 bits and stay resolvable so an emailed e-receipt keeps working; the
+  // caller is told which kind it got so it can warn about the weak ones.
   const row = await getDB()
     .prepare("SELECT * FROM receipts WHERE id = ?")
     .bind(id)
@@ -2838,6 +2842,7 @@ export async function getReceipt(id: string): Promise<any | null> {
     createdBy: row.created_by,
     createdAt: row.created_at,
     status: row.status || "paid",
+    legacyId: isLegacyPublicId(row.id),
     billedAt: row.billed_at,
     paidAt: row.paid_at,
     pointsEarned: row.points_earned || 0,
