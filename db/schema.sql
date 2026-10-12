@@ -170,6 +170,14 @@ CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_branch ON orders(branch_id);
 CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at);
 
+-- A table bill is anonymous until a cashier attaches a Royal account at the
+-- till; `opened_by` records which waiter opened it.
+ALTER TABLE orders ADD COLUMN discount INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN coupon_code TEXT;
+ALTER TABLE orders ADD COLUMN opened_by TEXT;
+CREATE INDEX IF NOT EXISTS idx_orders_payment ON orders(payment_status);
+CREATE INDEX IF NOT EXISTS idx_orders_table_open ON orders(table_number, payment_status);
+
 -- =============================================
 -- ORDER ITEMS
 -- =============================================
@@ -190,6 +198,13 @@ CREATE TABLE IF NOT EXISTS order_items (
   FOREIGN KEY (menu_item_id) REFERENCES dishes(id)
 );
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
+
+-- Serving is a per-dish event: the kitchen stops at `ready` and the waiter
+-- records the handover. `served_at` is what makes ordered -> served measurable.
+ALTER TABLE order_items ADD COLUMN served_at TEXT;
+ALTER TABLE order_items ADD COLUMN served_by TEXT;
+CREATE INDEX IF NOT EXISTS idx_order_items_status ON order_items(status);
+CREATE INDEX IF NOT EXISTS idx_order_items_served_at ON order_items(served_at);
 
 -- =============================================
 -- KITCHEN ORDERS (derived/synced from orders table for KDS display)
@@ -340,6 +355,13 @@ CREATE INDEX IF NOT EXISTS idx_receipts_created ON receipts(created_at);
 CREATE INDEX IF NOT EXISTS idx_receipts_branch ON receipts(branch_id);
 CREATE INDEX IF NOT EXISTS idx_receipts_order ON receipts(order_id);
 
+-- A coupon reduces the bill before tax, so the receipt has to record that it
+-- happened. Historic receipts carried no discount, so 0 is the truthful
+-- default rather than a placeholder.
+ALTER TABLE receipts ADD COLUMN discount INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE receipts ADD COLUMN coupon_code TEXT;
+CREATE INDEX IF NOT EXISTS idx_receipts_table ON receipts(table_number);
+
 -- =============================================
 -- COUPONS (auto-generated from points milestones)
 -- =============================================
@@ -367,6 +389,7 @@ CREATE TABLE IF NOT EXISTS loyalty_events (
   user_id TEXT NOT NULL,
   order_id TEXT,
   points_earned INTEGER DEFAULT 0,
+  points_redeemed INTEGER DEFAULT 0,
   coupon_code TEXT,
   reason TEXT,
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
@@ -374,6 +397,30 @@ CREATE TABLE IF NOT EXISTS loyalty_events (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_loyalty_user ON loyalty_events(user_id);
+
+-- =============================================
+-- ADDONS (server-priced extras)
+-- The client sends an id and a quantity; the price is always read from here,
+-- so a payment endpoint never accepts a price from the browser.
+-- =============================================
+CREATE TABLE IF NOT EXISTS addons (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  price INTEGER NOT NULL DEFAULT 0,      -- kyat, no decimals
+  is_available INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_addons_available ON addons(is_available);
+
+INSERT OR IGNORE INTO addons (id, name, price) VALUES
+  ('addon-egg',         'Extra egg',               1500),
+  ('addon-rare',        'Rare finish',             2500),
+  ('addon-caviar',      'Oscietra caviar',         8500),
+  ('addon-truffle',     'Black truffle',           6500),
+  ('addon-sub',         'Substitute starch',        500),
+  ('addon-sauce',       'Sauce on the side',        800),
+  ('addon-gluten-free', 'Gluten-free preparation',  1200),
+  ('addon-no-onion',    'No onion',                   0);
 
 -- =============================================
 -- MENU SETS (named sets of dishes — tasting menus / combos)
