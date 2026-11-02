@@ -1,6 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { canIssueBill } from "./receipt-lifecycle";
 import { newPublicId, isLegacyPublicId } from "./public-id";
+import { computeTotals } from "./pricing";
 
 export type UserRole =
   | "admin"
@@ -307,7 +308,7 @@ export async function findUserByEmail(email: string): Promise<DbUser | null> {
   const normalized = email.toLowerCase();
   const row = await getDB()
     .prepare(
-      "SELECT * FROM users WHERE LOWER(email) = ? AND is_active = 1 LIMIT 1"
+      "SELECT * FROM users WHERE email = ? AND is_active = 1 LIMIT 1"
     )
     .bind(normalized)
     .first<DbUser>();
@@ -1003,13 +1004,35 @@ export async function listReservations(): Promise<any[]> {
 }
 
 export async function reservationsOn(date: string, time?: string): Promise<any[]> {
-  return (await listReservations()).filter(
-    (r) =>
-      r.date === date &&
-      r.status !== "cancelled" &&
-      r.status !== "no-show" &&
-      (time ? r.time === time : true)
-  );
+  // Filtering used to happen in JS over an unbounded `SELECT * FROM
+  // reservations`, which scaled linearly with reservation count and was
+  // trivially DoS-able on the public availability endpoint. Push it into SQL.
+  const db = getDB();
+  const params: any[] = [date];
+  let sql = `SELECT * FROM reservations
+              WHERE date = ? AND status NOT IN ('cancelled', 'no-show')`;
+  if (time) {
+    sql += " AND time = ?";
+    params.push(time);
+  }
+  const { results } = await db.prepare(sql).bind(...params).all<any>();
+  return (results || []).map((r: any) => ({
+    id: r.id,
+    branchId: r.branch_id,
+    confirmationCode: r.confirmation_code,
+    customerName: r.customer_name,
+    customerEmail: r.customer_email,
+    customerPhone: r.customer_phone,
+    date: r.date,
+    time: r.time,
+    partySize: r.party_size,
+    tableNumber: r.table_number,
+    experience: r.experience,
+    specialRequests: r.special_requests,
+    status: r.status,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
 }
 
 // ---- Orders ----
@@ -1035,9 +1058,7 @@ export async function createOrder(data: any): Promise<any> {
     (s: number, it: any) => s + it.price * it.quantity,
     0
   );
-  const tax = Math.round(subtotal * 0.1);
-  const serviceCharge = Math.round(subtotal * 0.05);
-  const total = subtotal + tax + serviceCharge;
+  const { tax, serviceCharge, total } = computeTotals(subtotal, 0);
   const now = new Date().toISOString();
 
   const order = {
@@ -1288,9 +1309,9 @@ export async function validateCoupon(
   if (!userId || !code) return null;
   const row = await getDB()
     .prepare(
-      "SELECT code, amount, is_used, expires_at FROM coupons WHERE UPPER(code) = UPPER(?) AND user_id = ? LIMIT 1"
+      "SELECT code, amount, is_used, expires_at FROM coupons WHERE code = ? AND user_id = ? LIMIT 1"
     )
-    .bind(code.trim(), userId)
+    .bind(code.trim().toUpperCase(), userId)
     .first<any>();
   if (!row || row.is_used) return null;
   if (row.expires_at && new Date(row.expires_at).getTime() < Date.now()) return null;
@@ -1300,8 +1321,8 @@ export async function validateCoupon(
 /** Mark a coupon as spent. Callers must only call this after a successful sale. */
 export async function redeemCoupon(userId: string, code: string): Promise<void> {
   await getDB()
-    .prepare("UPDATE coupons SET is_used = 1 WHERE UPPER(code) = UPPER(?) AND user_id = ?")
-    .bind(code.trim(), userId)
+    .prepare("UPDATE coupons SET is_used = 1 WHERE code = ? AND user_id = ?")
+    .bind(code.trim().toUpperCase(), userId)
     .run();
   await getDB()
     .prepare(
@@ -1382,10 +1403,10 @@ export async function getRoyalCustomers(filters?: { minSpend?: number; minPoints
       (r) => r.name.toLowerCase().includes(q) || r.email.toLowerCase().includes(q)
     );
   }
-  if (filters?.minPoints) {
+  if (filters?.minPoints !== undefined) {
     rows = rows.filter((r) => r.points >= filters.minPoints!);
   }
-  if (filters?.minSpend) {
+  if (filters?.minSpend !== undefined) {
     rows = rows.filter((r) => r.verifiedSpent >= filters.minSpend!);
   }
   if (filters?.tier) {
@@ -1995,16 +2016,38 @@ export async function getAnalytics(): Promise<any> {
     ]);
 
   // Weekly revenue from daily_sales
-  const { results: weekly } = await getDB()
-    .prepare("SELECT date, total_revenue FROM daily_sales ORDER BY date ASC LIMIT 7")
+  // Weekly revenue is derived from receipts that actually exist, rather than
+  // from `daily_sales`, which nothing ever wrote to — that chart was
+  // permanently empty. Grouping paid receipts by day gives the same number
+  // without a separate rollup table to keep in sync.
+  const { results: weeklyRows } = await getDB()
+    .prepare(
+      `SELECT substr(COALESCE(paid_at, created_at), 1, 10) AS day,
+              COALESCE(SUM(total), 0) AS revenue
+         FROM receipts
+        WHERE status = 'paid'
+          AND COALESCE(paid_at, created_at) >= ?
+        GROUP BY day
+        ORDER BY day ASC
+        LIMIT 7`
+    )
+    .bind(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
     .all<any>();
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const weeklyRevenue = weekly.map((w: any) => ({
-    day: dayNames[new Date(w.date).getDay()],
-    revenue: w.total_revenue,
+  const weeklyRevenue = (weeklyRows || []).map((w: any) => ({
+    day: dayNames[new Date(w.day).getDay()],
+    revenue: w.revenue,
   }));
 
-  const occupancy = Math.min(100, Math.round(((orderRows?.c || 0) * 5) / 6 * 10) / 10);
+  // Occupancy is real covers, not a fabricated formula: seated tables' capacity
+  // divided by total table capacity. `currentCovers` below is the seated sum.
+  const totalCapacity = await getDB()
+    .prepare("SELECT COALESCE(SUM(capacity), 0) as s FROM tables")
+    .first<any>();
+  const occupancy =
+    totalCapacity?.s && totalCapacity.s > 0
+      ? Math.round(((coversRow?.s || 0) / totalCapacity.s) * 1000) / 10
+      : 0;
 
   return {
     todayReservations: resRows?.c || 0,
@@ -2106,10 +2149,10 @@ export async function createPaidSale(data: any): Promise<{
     discount = Math.min(appliedCoupon.amount, grossSubtotal);
   }
 
-  const subtotal = Math.max(0, grossSubtotal - discount);
-  const tax = Math.round(subtotal * 0.1);
-  const serviceCharge = Math.round(subtotal * 0.05);
-  const total = subtotal + tax + serviceCharge;
+  const { subtotal, tax, serviceCharge, total } = computeTotals(
+    grossSubtotal,
+    discount
+  );
 
   const order = {
     id,
@@ -2327,10 +2370,10 @@ export async function settleExistingOrder(data: {
     discount = Math.min(appliedCoupon.amount, grossSubtotal);
   }
 
-  const subtotal = Math.max(0, grossSubtotal - discount);
-  const tax = Math.round(subtotal * 0.1);
-  const serviceCharge = Math.round(subtotal * 0.05);
-  const total = subtotal + tax + serviceCharge;
+  const { subtotal, tax, serviceCharge, total } = computeTotals(
+    grossSubtotal,
+    discount
+  );
 
   const settledAt = new Date().toISOString();
   const updated = await db
@@ -2521,10 +2564,10 @@ export async function issueTableBill(data: {
     discount = Math.min(appliedCoupon.amount, grossSubtotal);
   }
 
-  const subtotal = Math.max(0, grossSubtotal - discount);
-  const tax = Math.round(subtotal * 0.1);
-  const serviceCharge = Math.round(subtotal * 0.05);
-  const total = subtotal + tax + serviceCharge;
+  const { subtotal, tax, serviceCharge, total } = computeTotals(
+    grossSubtotal,
+    discount
+  );
 
   const receiptNo = await nextUniqueNumber(
     "receipt",

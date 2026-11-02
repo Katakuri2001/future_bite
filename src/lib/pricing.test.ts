@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { priceCartLine, AddonError } from "./pricing";
+import { priceCartLine, AddonError, computeTotals } from "./pricing";
 
 /**
  * A payment endpoint must never take a price from the browser.
@@ -96,5 +96,52 @@ describe("priceCartLine", () => {
         catalogue
       )
     ).toThrow(AddonError);
+  });
+});
+
+/**
+ * Tax and service charge are computed in eleven places across the codebase.
+ * Changing the rate required eleven edits, and missing one silently
+ * over- or under-charged a guest. The audit found this as a medium-severity
+ * defect; this test pins the one definition that now owns the calculation.
+ */
+describe("computeTotals", () => {
+  it("applies 10% tax and 5% service to the subtotal", () => {
+    const t = computeTotals(10_000, 0);
+    expect(t.subtotal).toBe(10_000);
+    expect(t.tax).toBe(1_000);
+    expect(t.serviceCharge).toBe(500);
+    expect(t.total).toBe(11_500);
+  });
+
+  it("applies the discount before tax and service, never after", () => {
+    // 10,000 - 4,000 = 6,000; tax 600, service 300; total 6,900.
+    // Subtracting the discount from a finished total would leave tax computed
+    // on 10,000 and overcharge by 600 kyat of tax alone.
+    const t = computeTotals(10_000, 4_000);
+    expect(t.subtotal).toBe(6_000);
+    expect(t.tax).toBe(600);
+    expect(t.serviceCharge).toBe(300);
+    expect(t.total).toBe(6_900);
+  });
+
+  it("never discounts past zero", () => {
+    const t = computeTotals(10_000, 100_000);
+    expect(t.subtotal).toBe(0);
+    expect(t.tax).toBe(0);
+    expect(t.serviceCharge).toBe(0);
+    expect(t.total).toBe(0);
+  });
+
+  it("rounds tax and service independently", () => {
+    // 3,333 * 0.1 = 333.3 -> 333; 3,333 * 0.05 = 166.65 -> 167
+    const t = computeTotals(3_333, 0);
+    expect(t.tax).toBe(333);
+    expect(t.serviceCharge).toBe(167);
+  });
+
+  it("records the discount it applied", () => {
+    const t = computeTotals(10_000, 4_000);
+    expect(t.discount).toBe(4_000);
   });
 });

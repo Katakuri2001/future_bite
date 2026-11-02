@@ -8,7 +8,7 @@ import {
   settleExistingOrder,
 } from "@/lib/db";
 import { requirePOS } from "@/lib/auth";
-import { priceCartLine, AddonError } from "@/lib/pricing";
+import { priceCartLine, AddonError, computeTotals } from "@/lib/pricing";
 
 const itemSchema = z.object({
   menuItemId: z.string().min(1),
@@ -90,8 +90,8 @@ export async function POST(request: NextRequest) {
       );
     }
     const owns = await getDB()
-      .prepare("SELECT 1 FROM coupons WHERE UPPER(code) = UPPER(?) AND user_id = ? AND is_used = 0 LIMIT 1")
-      .bind(couponCode.trim(), customerId)
+      .prepare("SELECT 1 FROM coupons WHERE code = ? AND user_id = ? AND is_used = 0 LIMIT 1")
+      .bind(couponCode.trim().toUpperCase(), customerId)
       .first();
     if (!owns) {
       return NextResponse.json(
@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
   // One catalogue read for the whole cart rather than one per line.
   const addonMap = new Map(
     (await getAddonsByIds(
-      cart.flatMap((line) => (line.addons || []).map((a) => a.id))
+      cart.flatMap((line) => (line.addons || []).map((a: any) => a.id))
     )).map((a: any) => [a.id, a])
   );
 

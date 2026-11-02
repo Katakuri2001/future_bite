@@ -35,7 +35,10 @@
   }
 
   html {
-    scroll-behavior: smooth;
+    /* Smooth scrolling is provided by Lenis on marketing pages; keeping
+       scroll-behavior: smooth here fought Next.js's scroll-to-top on route
+       change and left /about and /reserve scrolled to the footer. */
+    scroll-behavior: auto;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }

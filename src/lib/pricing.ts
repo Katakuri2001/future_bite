@@ -83,6 +83,34 @@ function resolveAddons(
  * The client supplies ids and quantities only. Every amount here comes from the
  * database, so a tampered request changes nothing but the error message.
  */
+export interface Totals {
+  subtotal: number;
+  discount: number;
+  tax: number;
+  serviceCharge: number;
+  total: number;
+}
+
+/**
+ * Single definition of the money math. Tax and service charge are computed
+ * on the post-discount subtotal, because a coupon reduces what the guest
+ * actually pays — not on a finished total afterwards, which would leave tax
+ * and service charge computed on the undiscounted figure.
+ */
+export function computeTotals(grossSubtotal: number, discount: number): Totals {
+  const d = Math.min(Math.max(0, discount), Math.max(0, grossSubtotal));
+  const subtotal = Math.max(0, grossSubtotal - d);
+  const tax = Math.round(subtotal * 0.1);
+  const serviceCharge = Math.round(subtotal * 0.05);
+  return {
+    subtotal,
+    discount: d,
+    tax,
+    serviceCharge,
+    total: subtotal + tax + serviceCharge,
+  };
+}
+
 export function priceCartLine(
   dish: { id: string; name: string; price: number },
   requestedAddons: unknown,

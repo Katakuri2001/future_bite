@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
-import { initLenis, destroyLenis } from "@/lib/motion/gsap";
+import { initLenis, destroyLenis, scrollToTop } from "@/lib/motion/gsap";
 
 export default function MotionProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -18,6 +18,12 @@ export default function MotionProvider({ children }: { children: React.ReactNode
     if (isMarketing) {
       initLenis();
     }
+    // Lenis intercepts native scrolling and does not honour Next.js's
+    // automatic scroll-to-top on navigation, so a route change can leave
+    // the user at the bottom of the previous (longer) page — which is why
+    // the footer appeared first on /about and /reserve. Force the top for
+    // every route, marketing or not.
+    scrollToTop(true);
     return () => {
       destroyLenis();
     };

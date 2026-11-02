@@ -34,10 +34,28 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await requireAdmin(request);
   if (auth instanceof NextResponse) return auth;
-  const body = await request.json();
-  if (body?.items && Array.isArray(body.items) && body.items.length > 0) {
-    const order = await createOrder(body);
-    return NextResponse.json({ success: true, data: order });
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { success: false, error: "Invalid request body" },
+      { status: 400 }
+    );
   }
-  return NextResponse.json({ success: true, data: body });
+
+  if (
+    !body ||
+    typeof body !== "object" ||
+    !Array.isArray((body as any).items) ||
+    (body as any).items.length === 0
+  ) {
+    return NextResponse.json(
+      { success: false, error: "items is required" },
+      { status: 400 }
+    );
+  }
+
+  const order = await createOrder(body as any);
+  return NextResponse.json({ success: true, data: order });
 }

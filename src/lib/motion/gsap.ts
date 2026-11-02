@@ -43,6 +43,24 @@ export function destroyLenis(): void {
   }
 }
 
+/**
+ * Reset the viewport to the top.
+ *
+ * Lenis owns the scroll position on marketing pages and suppresses the native
+ * scroll-to-top that Next.js performs on navigation, so a route change can
+ * leave the user at the bottom of the previous (longer) page — which is why
+ * the footer appeared first on /about and /reserve. Calling this after init
+ * forces the new page to start at the top.
+ */
+export function scrollToTop(immediate = true): void {
+  if (typeof window === "undefined") return;
+  if (lenisInstance) {
+    lenisInstance.scrollTo(0, { immediate, duration: immediate ? 0 : 1.2 });
+    return;
+  }
+  window.scrollTo({ top: 0, left: 0, behavior: immediate ? "auto" : "smooth" });
+}
+
 export function useLenis(enabled: boolean = true) {
   const pathname = usePathname();
 

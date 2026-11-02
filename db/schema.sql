@@ -143,6 +143,7 @@ CREATE TABLE IF NOT EXISTS reservations (
   FOREIGN KEY (branch_id) REFERENCES branches(id)
 );
 CREATE INDEX IF NOT EXISTS idx_reservations_date ON reservations(date);
+CREATE INDEX IF NOT EXISTS idx_reservations_email ON reservations(customer_email);
 CREATE INDEX IF NOT EXISTS idx_reservations_branch ON reservations(branch_id);
 
 -- =============================================
@@ -169,6 +170,8 @@ CREATE TABLE IF NOT EXISTS orders (
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_branch ON orders(branch_id);
 CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at);
+CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
+CREATE INDEX IF NOT EXISTS idx_orders_table_payment ON orders(table_number, payment_status);
 
 -- A table bill is anonymous until a cashier attaches a Royal account at the
 -- till; `opened_by` records which waiter opened it.
@@ -198,6 +201,7 @@ CREATE TABLE IF NOT EXISTS order_items (
   FOREIGN KEY (menu_item_id) REFERENCES dishes(id)
 );
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_menuitem ON order_items(menu_item_id);
 
 -- Serving is a per-dish event: the kitchen stops at `ready` and the waiter
 -- records the handover. `served_at` is what makes ordered -> served measurable.
@@ -224,6 +228,7 @@ CREATE TABLE IF NOT EXISTS kitchen_orders (
   FOREIGN KEY (branch_id) REFERENCES branches(id)
 );
 CREATE INDEX IF NOT EXISTS idx_kitchen_orders_status ON kitchen_orders(status);
+CREATE INDEX IF NOT EXISTS idx_kitchen_orders_order ON kitchen_orders(order_id);
 CREATE INDEX IF NOT EXISTS idx_kitchen_orders_branch ON kitchen_orders(branch_id);
 
 -- =============================================

@@ -29,38 +29,48 @@ export async function GET(request: NextRequest) {
       )
       .all<any>();
 
-    const tables = [];
-    for (const o of orders || []) {
-      const { results: items } = await db
-        .prepare(
-          `SELECT id, name, quantity, price, special_instructions
-             FROM order_items WHERE order_id = ? ORDER BY created_at ASC`
-        )
-        .bind(o.id)
-        .all<any>();
+    const orderIds = (orders || []).map((o: any) => o.id);
 
-      tables.push({
-        orderId: o.id,
-        orderNumber: o.order_number,
-        tableNumber: o.table_number,
-        subtotal: o.subtotal,
-        tax: o.tax,
-        serviceCharge: o.service_charge,
-        total: o.total,
-        itemCount: o.item_count,
-        // Already attached to an account — the cashier should know before
-        // settling, or they may credit the wrong guest.
-        hasAccount: Boolean(o.user_id),
-        openedAt: o.created_at,
-        items: (items || []).map((i: any) => ({
-          id: i.id,
-          name: i.name,
-          quantity: i.quantity,
-          price: i.price,
-          specialInstructions: i.special_instructions || "",
-        })),
-      });
+    // Batched rather than one query per order: the idiom already exists in
+    // injectOrderItems, and per-order round trips scale with open tables.
+    const itemMap = new Map<string, any[]>();
+    if (orderIds.length > 0) {
+      const placeholders = orderIds.map(() => "?").join(",");
+      const { results: allItems } = await db
+        .prepare(
+          `SELECT id, order_id, name, quantity, price, special_instructions
+             FROM order_items WHERE order_id IN (${placeholders})
+             ORDER BY created_at ASC`
+        )
+        .bind(...orderIds)
+        .all<any>();
+      for (const i of allItems || []) {
+        if (!itemMap.has(i.order_id)) itemMap.set(i.order_id, []);
+        itemMap.get(i.order_id)!.push(i);
+      }
     }
+
+    const tables = (orders || []).map((o: any) => ({
+      orderId: o.id,
+      orderNumber: o.order_number,
+      tableNumber: o.table_number,
+      subtotal: o.subtotal,
+      tax: o.tax,
+      serviceCharge: o.service_charge,
+      total: o.total,
+      itemCount: o.item_count,
+      // Already attached to an account — the cashier should know before
+      // settling, or they may credit the wrong guest.
+      hasAccount: Boolean(o.user_id),
+      openedAt: o.created_at,
+      items: (itemMap.get(o.id) || []).map((i: any) => ({
+        id: i.id,
+        name: i.name,
+        quantity: i.quantity,
+        price: i.price,
+        specialInstructions: i.special_instructions || "",
+      })),
+    }));
 
     return NextResponse.json({ success: true, data: tables });
   } catch (e: any) {
