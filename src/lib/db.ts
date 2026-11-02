@@ -171,15 +171,6 @@ async function notifyRealtime(payload?: unknown): Promise<void> {
   }
 }
 
-// ---- Socket-compatible helpers (keep old names for route reuse) ----
-export async function readDB(): Promise<null> {
-  return null;
-}
-
-export async function writeDB(_db: unknown): Promise<void> {
-  void _db;
-}
-
 export function generateToken(): string {
   return crypto.randomUUID().replace(/-/g, "");
 }
@@ -804,13 +795,6 @@ export async function listTables(): Promise<DbTable[]> {
   }));
 }
 
-export async function updateTableStatus(tableNumber: number, status: string): Promise<void> {
-  await getDB()
-    .prepare("UPDATE tables SET status = ? WHERE number = ?")
-    .bind(status, tableNumber)
-    .run();
-}
-
 export async function createTable(data: any): Promise<any> {
   const id = data.id || `tbl-${Date.now()}`;
   const number =
@@ -1273,29 +1257,40 @@ async function issueEarnedCoupons(
     .all<any>();
   const owed = milestonesUnlocked - (existing[0]?.c || 0);
 
+  // Generate all the codes first, then write them in one batch rather than
+  // round-tripping the database per coupon.
+  const codes: string[] = [];
   for (let i = 0; i < owed; i++) {
-    const code = await generateCouponCode();
-    await db
-      .prepare(
-        "INSERT INTO coupons (id, branch_id, user_id, code, amount, is_used) VALUES (?, ?, ?, ?, ?, 0)"
-      )
-      .bind(`cpn-${Date.now()}-${i}`, "default-branch", userId, code, COUPON_VALUE_KYAT)
-      .run();
-    await db
-      .prepare(
-        "INSERT INTO loyalty_events (id, branch_id, user_id, order_id, points_earned, coupon_code, reason) VALUES (?, ?, ?, ?, ?, ?, ?)"
-      )
-      .bind(
-        `loy-cpn-${Date.now()}-${i}`,
-        "default-branch",
-        userId,
-        orderId,
-        0,
-        code,
-        `Coupon issued for ${COUPON_POINT_THRESHOLD}-point milestone`
-      )
-      .run();
+    codes.push(await generateCouponCode());
   }
+
+  if (codes.length === 0) return;
+
+  const now = Date.now();
+  await db.batch([
+    ...codes.map((code, i) =>
+      db
+        .prepare(
+          "INSERT INTO coupons (id, branch_id, user_id, code, amount, is_used) VALUES (?, ?, ?, ?, ?, 0)"
+        )
+        .bind(`cpn-${now}-${i}`, "default-branch", userId, code, COUPON_VALUE_KYAT)
+    ),
+    ...codes.map((code, i) =>
+      db
+        .prepare(
+          "INSERT INTO loyalty_events (id, branch_id, user_id, order_id, points_earned, coupon_code, reason) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(
+          `loy-cpn-${now}-${i}`,
+          "default-branch",
+          userId,
+          orderId,
+          0,
+          code,
+          `Coupon issued for ${COUPON_POINT_THRESHOLD}-point milestone`
+        )
+    ),
+  ]);
 }
 
 /**
@@ -1422,36 +1417,6 @@ export async function listOrders(): Promise<any[]> {
   return await injectOrderItems(orders);
 }
 
-export async function getOrder(id: string): Promise<any | null> {
-  const order = await getDB()
-    .prepare("SELECT * FROM orders WHERE id = ?")
-    .bind(id)
-    .first<any>();
-  if (!order) return null;
-  const items = await getDB()
-    .prepare("SELECT * FROM order_items WHERE order_id = ?")
-    .bind(id)
-    .all<any>();
-  return { ...order, items: items.results };
-}
-
-// Per-dish status transitions.
-//
-// A dish moves pending -> accepted -> preparing -> plating -> ready under the
-// kitchen's control, then ready -> served under the waiter's control, because
-// serving is the moment a waiter carries it to the table. The kitchen therefore
-// cannot mark a dish served, and the waiter cannot advance a dish through the
-// kitchen's stages — the split is enforced here, not just hidden in the UI.
-export const DISH_STATUS_FLOW: Record<string, string[]> = {
-  pending: ["accepted", "cancelled"],
-  accepted: ["preparing", "cancelled"],
-  preparing: ["plating", "cancelled"],
-  plating: ["ready", "cancelled"],
-  ready: ["served"],
-  served: [],
-  cancelled: [],
-};
-
 /** Transitions the kitchen may drive. `served` is deliberately absent. */
 export const KITCHEN_ITEM_FLOW: Record<string, string[]> = {
   pending: ["accepted", "cancelled"],
@@ -1577,7 +1542,16 @@ export async function updateOrderItemStatus(
     .first<any>();
 }
 
-/** Bulk-advance every unserved dish on an order (used by the kitchen board). */
+/**
+ * Bulk-advance every movable dish on an order (used by the kitchen board).
+ *
+ * Previously this looped over dishes and called `updateOrderItemStatus` for
+ * each, and every one of those calls re-ran `recomputeOrderStatus` (2 SELECTs
+ * + up to 2 UPDATEs) and broadcast. An m-dish order cost ~6m queries and 2m
+ * realtime messages — the bulk path was more expensive than the per-dish path
+ * it was written to replace. The updates are batched, the order status is
+ * recomputed once, and one notification goes out.
+ */
 export async function updateOrderStatus(
   id: string,
   status: string
@@ -1589,11 +1563,35 @@ export async function updateOrderStatus(
     .all<any>();
   if (!results || results.length === 0) return null;
 
-  let moved = 0;
-  for (const item of results) {
-    if (await updateOrderItemStatus(item.id, status, KITCHEN_ITEM_FLOW)) moved++;
-  }
-  if (moved === 0) return null;
+  const movable = results.filter((item: any) => {
+    const allowed = KITCHEN_ITEM_FLOW[item.status] || [];
+    return allowed.includes(status);
+  });
+  if (movable.length === 0) return null;
+
+  // `served` is deliberately absent from KITCHEN_ITEM_FLOW, so this branch is
+  // defensive rather than reachable from the kitchen route.
+  const statements = movable.map((item: any) =>
+    status === "served"
+      ? db
+          .prepare(
+            `UPDATE order_items SET status = ?, served_at = ?,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+              WHERE id = ?`
+          )
+          .bind(status, new Date().toISOString(), item.id)
+      : db
+          .prepare(
+            `UPDATE order_items SET status = ?,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+              WHERE id = ?`
+          )
+          .bind(status, item.id)
+  );
+  await db.batch(statements);
+
+  await recomputeOrderStatus(id);
+  await notifyRealtime({ type: "orders", orderId: id });
 
   return db.prepare("SELECT * FROM orders WHERE id = ?").bind(id).first<any>();
 }
@@ -1725,9 +1723,6 @@ export async function createKitchenOrder(data: any): Promise<any> {
   return { id: orderId, orderNumber, tableNumber: data.tableNumber || 1, status: data.status || "pending" };
 }
 
-export async function updateKitchenOrderStatus(orderId: string, status: string): Promise<void> {
-  await updateOrderStatus(orderId, status);
-}
 
 // ---- Staff ----
 export async function listStaff(): Promise<any[]> {
@@ -1955,13 +1950,6 @@ export async function listSupplyTransactions(supplyId?: string): Promise<any[]> 
   }));
 }
 
-export async function getSupplyStock(supplyId: string): Promise<number> {
-  const row = await getDB()
-    .prepare("SELECT current_stock FROM supplies WHERE id = ?")
-    .bind(supplyId)
-    .first<any>();
-  return row?.current_stock || 0;
-}
 
 async function ensureSupplyStatus(id: string): Promise<void> {
   const row = await getDB()
@@ -2067,41 +2055,6 @@ export async function getAnalytics(): Promise<any> {
 }
 
 // ---- Receipts (POS — E-receipts & physical receipts) ----
-export async function createReceipt(data: any): Promise<any> {
-  const year = new Date().getFullYear();
-  const receiptNo =
-    data.receiptNo ||
-    (await nextUniqueNumber("receipt", "receipts", "receipt_no", (n) =>
-      `R-${year}-${String(n).padStart(4, "0")}`
-    ));
-  const id = data.id || newPublicId("rec");
-  await getDB()
-    .prepare(
-      `INSERT INTO receipts (id, branch_id, receipt_no, order_id, order_number, customer_name, table_number, subtotal, discount, coupon_code, tax, service_charge, total, payment_method, receipt_type, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .bind(
-      id,
-      "default-branch",
-      receiptNo,
-      data.orderId || null,
-      data.orderNumber || "",
-      data.customerName || "Guest",
-      data.tableNumber || null,
-      parseInt(data.subtotal) || 0,
-      parseInt(data.discount) || 0,
-      data.couponCode || null,
-      parseInt(data.tax) || 0,
-      parseInt(data.serviceCharge) || 0,
-      parseInt(data.total) || 0,
-      data.paymentMethod || "cash",
-      data.receiptType || "e",
-      data.createdBy || ""
-    )
-    .run();
-  await notifyRealtime({ type: "receipts" });
-  return getReceipt(id);
-}
 
 /**
  * POS checkout — one atomic D1 batch: paid+completed order, its items, and the
