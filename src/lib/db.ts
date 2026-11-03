@@ -2,6 +2,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { canIssueBill } from "./receipt-lifecycle";
 import { newPublicId, isLegacyPublicId } from "./public-id";
 import { computeTotals } from "./pricing";
+import { canCancelOrder } from "./order-cancel";
 
 export type UserRole =
   | "admin"
@@ -1461,10 +1462,14 @@ export async function recomputeOrderStatus(orderId: string): Promise<string | nu
   if (!results || results.length === 0) return null;
 
   const live = results.map((r: any) => r.status).filter((s: string) => s !== "cancelled");
-  if (live.length === 0) return "cancelled";
 
+  // When every dish is cancelled the order is cancelled, not pending. This
+  // must flow through the same UPDATE path as any other transition, so the
+  // terminal state is actually written rather than merely returned.
   const derived =
-    STATUS_PRECEDENCE.find((s) => live.includes(s)) ?? "pending";
+    live.length === 0
+      ? "cancelled"
+      : STATUS_PRECEDENCE.find((s) => live.includes(s)) ?? "pending";
 
   const current = await db
     .prepare("SELECT status FROM orders WHERE id = ?")
@@ -1554,6 +1559,78 @@ export async function updateOrderItemStatus(
  * it was written to replace. The updates are batched, the order status is
  * recomputed once, and one notification goes out.
  */
+/**
+ * Cancel an unpaid order.
+ *
+ * Moves every dish to cancelled, which makes `recomputeOrderStatus` settle the
+ * order on `cancelled` (all dishes cancelled → cancelled). The kitchen ticket
+ * is withdrawn and any unpaid bill is voided so the table is free again.
+ *
+ * Paid orders are refused here — they need a refund, which is a different
+ * operation and does not exist yet. Loyalty points are never reversed because
+ * they were only ever minted on payment, which has not happened.
+ */
+export async function cancelOrder(orderId: string): Promise<any | null> {
+  const db = getDB();
+  const order = await db
+    .prepare("SELECT * FROM orders WHERE id = ?")
+    .bind(orderId)
+    .first<any>();
+  if (!order) return null;
+
+  const check = canCancelOrder({
+    paymentStatus: order.payment_status,
+    status: order.status,
+  });
+  if (!check.ok) throw new Error(check.reason);
+
+  // Move every dish to cancelled in one batch.
+  const { results } = await db
+    .prepare("SELECT id FROM order_items WHERE order_id = ?")
+    .bind(orderId)
+    .all<any>();
+
+  if (results && results.length > 0) {
+    await db.batch(
+      results.map((r: any) =>
+        db
+          .prepare(
+            `UPDATE order_items SET status = 'cancelled',
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+              WHERE id = ?`
+          )
+          .bind(r.id)
+      )
+    );
+  }
+
+  // Withdraw the kitchen ticket.
+  await db
+    .prepare(
+      `UPDATE kitchen_orders SET status = 'cancelled',
+              updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+        WHERE order_id = ?`
+    )
+    .bind(orderId)
+    .run();
+
+  // Void any unpaid bill so the table is free again.
+  const unpaidBill = await db
+    .prepare(
+      `SELECT id FROM receipts WHERE order_id = ? AND status = 'unpaid' LIMIT 1`
+    )
+    .bind(orderId)
+    .first<any>();
+  if (unpaidBill) {
+    await voidReceipt({ receiptId: unpaidBill.id, reason: "Order cancelled" });
+  }
+
+  await recomputeOrderStatus(orderId);
+  await notifyRealtime({ type: "orders", orderId });
+
+  return db.prepare("SELECT * FROM orders WHERE id = ?").bind(orderId).first<any>();
+}
+
 export async function updateOrderStatus(
   id: string,
   status: string
