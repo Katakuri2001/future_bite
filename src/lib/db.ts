@@ -492,7 +492,9 @@ export async function createDish(data: any): Promise<any> {
     .bind(
       id,
       "default-branch",
-      data.category_id || (data.categoryId as string) || "cat-1",
+      (typeof data.category_id === "string" && data.category_id) ||
+        (typeof data.categoryId === "string" && data.categoryId) ||
+        "cat-1",
       data.name,
       data.slug || slugify(data.name),
       data.description || "",
