@@ -353,6 +353,27 @@ ALTER TABLE receipts ADD COLUMN coupon_code TEXT;
 CREATE INDEX IF NOT EXISTS idx_receipts_table ON receipts(table_number);
 
 -- =============================================
+-- WAITLIST (guests who arrive when no table is free)
+-- =============================================
+CREATE TABLE IF NOT EXISTS waitlist (
+  id TEXT PRIMARY KEY,
+  branch_id TEXT NOT NULL DEFAULT 'default-branch',
+  name TEXT NOT NULL,
+  phone TEXT,
+  party_size INTEGER NOT NULL DEFAULT 2,
+  preferred_time TEXT,
+  experience TEXT DEFAULT 'standard',
+  status TEXT NOT NULL DEFAULT 'waiting',
+  seated_table INTEGER,
+  seated_at TEXT,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY (branch_id) REFERENCES branches(id)
+);
+CREATE INDEX IF NOT EXISTS idx_waitlist_status ON waitlist(status);
+CREATE INDEX IF NOT EXISTS idx_waitlist_created ON waitlist(created_at);
+
+-- =============================================
 -- COUPONS (auto-generated from points milestones)
 -- =============================================
 CREATE TABLE IF NOT EXISTS coupons (

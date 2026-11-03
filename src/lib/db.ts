@@ -1052,6 +1052,100 @@ export async function reservationsOn(date: string, time?: string): Promise<any[]
  * or a table that was deleted from the floor plan) must not break the order
  * path that called it.
  */
+// ---- Waitlist ----
+
+export async function joinWaitlist(data: {
+  name: string;
+  phone?: string;
+  partySize: number;
+  preferredTime?: string;
+  experience?: string;
+}): Promise<any> {
+  const db = getDB();
+  const id = `wl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  await db
+    .prepare(
+      `INSERT INTO waitlist (id, branch_id, name, phone, party_size, preferred_time, experience, status)
+       VALUES (?, 'default-branch', ?, ?, ?, ?, ?, 'waiting')`
+    )
+    .bind(
+      id,
+      data.name,
+      data.phone || null,
+      Math.max(1, Math.min(50, data.partySize || 2)),
+      data.preferredTime || null,
+      data.experience || "standard"
+    )
+    .run();
+  return db.prepare("SELECT * FROM waitlist WHERE id = ?").bind(id).first<any>();
+}
+
+export async function listWaitlist(status?: string): Promise<any[]> {
+  const db = getDB();
+  const sql = status
+    ? "SELECT * FROM waitlist WHERE status = ? ORDER BY created_at ASC"
+    : "SELECT * FROM waitlist ORDER BY created_at ASC";
+  const { results } = status
+    ? await db.prepare(sql).bind(status).all<any>()
+    : await db.prepare(sql).all<any>();
+  return (results || []).map((r: any) => ({
+    id: r.id,
+    name: r.name,
+    phone: r.phone,
+    partySize: r.party_size,
+    preferredTime: r.preferred_time,
+    experience: r.experience,
+    status: r.status,
+    seatedTable: r.seated_table,
+    seatedAt: r.seated_at,
+    createdAt: r.created_at,
+  }));
+}
+
+export async function seatWaitlistedGuest(
+  id: string,
+  tableNumber: number
+): Promise<any | null> {
+  const db = getDB();
+  const row = await db
+    .prepare("SELECT * FROM waitlist WHERE id = ?")
+    .bind(id)
+    .first<any>();
+  if (!row || row.status !== "waiting") return null;
+
+  await db
+    .prepare(
+      `UPDATE waitlist SET status = 'seated', seated_table = ?,
+              seated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+              updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+        WHERE id = ?`
+    )
+    .bind(tableNumber, id)
+    .run();
+
+  await setTableStatusByNumber(tableNumber, "seated");
+  return db.prepare("SELECT * FROM waitlist WHERE id = ?").bind(id).first<any>();
+}
+
+export async function cancelWaitlistEntry(id: string): Promise<any | null> {
+  const db = getDB();
+  const row = await db
+    .prepare("SELECT * FROM waitlist WHERE id = ?")
+    .bind(id)
+    .first<any>();
+  if (!row || row.status !== "waiting") return null;
+
+  await db
+    .prepare(
+      `UPDATE waitlist SET status = 'cancelled',
+              updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+        WHERE id = ?`
+    )
+    .bind(id)
+    .run();
+  return db.prepare("SELECT * FROM waitlist WHERE id = ?").bind(id).first<any>();
+}
+
 export async function setTableStatusByNumber(
   tableNumber: number | null | undefined,
   status: string
