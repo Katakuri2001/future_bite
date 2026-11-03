@@ -32,6 +32,7 @@ describe("displayStats", () => {
     revenue: 128_000,
     averageOrderValue: 14_222,
     occupancy: 40,
+    lowStockCount: 0,
     popularDishes: [{ name: "Nebula Tartare", orders: 5 }],
   };
 

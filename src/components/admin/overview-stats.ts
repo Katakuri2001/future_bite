@@ -24,6 +24,7 @@ export interface AnalyticsStats {
   revenue: number;
   averageOrderValue: number;
   occupancy: number;
+  lowStockCount: number;
   popularDishes: PopularDish[];
 }
 
@@ -37,6 +38,7 @@ export const EMPTY_STATS: AnalyticsStats = {
   revenue: 0,
   averageOrderValue: 0,
   occupancy: 0,
+  lowStockCount: 0,
   popularDishes: [],
 };
 

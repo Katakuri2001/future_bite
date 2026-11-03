@@ -2107,7 +2107,7 @@ async function ensureSupplyStatus(id: string): Promise<void> {
 // ---- Analytics ----
 export async function getAnalytics(): Promise<any> {
   const today = new Date().toISOString().slice(0, 10);
-  const [resRows, orderRows, kitchenRow, revenueRow, recentOrders, coversRow, receiptsRow] =
+  const [resRows, orderRows, kitchenRow, revenueRow, recentOrders, coversRow, receiptsRow, lowStockRow] =
     await Promise.all([
       getDB()
         .prepare("SELECT COUNT(*) as c FROM reservations WHERE date = ?")
@@ -2133,6 +2133,9 @@ export async function getAnalytics(): Promise<any> {
       getDB()
         .prepare("SELECT COUNT(*) as c FROM receipts WHERE created_at >= ?")
         .bind(today + "T00:00:00")
+        .first<any>(),
+      getDB()
+        .prepare("SELECT COUNT(*) as c FROM supplies WHERE current_stock < minimum_stock")
         .first<any>(),
     ]);
 
@@ -2179,6 +2182,7 @@ export async function getAnalytics(): Promise<any> {
     revenue: revenueRow?.s || 0,
     averageOrderValue: Math.round(revenueRow?.a || 0),
     occupancy,
+    lowStockCount: lowStockRow?.c || 0,
     popularDishes: (recentOrders?.results || []).map((d: any) => ({
       name: d.name,
       orders: d.orders,

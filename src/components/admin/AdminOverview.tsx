@@ -29,6 +29,7 @@ interface AnalyticsStats {
   revenue: number;
   averageOrderValue: number;
   occupancy: number;
+  lowStockCount: number;
   popularDishes: PopularDish[];
 }
 
@@ -65,6 +66,11 @@ export default function AdminOverview() {
     { label: "Revenue", value: formatPrice(data.revenue), icon: TrendingUp, color: "text-success" },
   ];
 
+  // Surface low stock proactively: the audit found it was computed and shown
+  // on the inventory page, but never surfaced on the dashboard where an owner
+  // would actually see it.
+  const lowStock = data.lowStockCount ?? 0;
+
   return (
     <div>
       {shown.stale && (
@@ -73,6 +79,16 @@ export default function AdminOverview() {
           {error
             ? `Dashboard data unavailable: ${error}. Figures below are not real.`
             : "Loading dashboard data…"}
+        </div>
+      )}
+
+      {!shown.stale && lowStock > 0 && (
+        <div className="mb-6 p-3 bg-warning/10 border border-warning/30 text-warning text-sm flex items-center gap-2">
+          <AlertTriangle size={14} className="shrink-0" />
+          {lowStock} ingredient{lowStock === 1 ? "" : "s"} below minimum stock.{" "}
+          <a href="/admin/inventory" className="underline hover:text-ivory">
+            Review inventory
+          </a>
         </div>
       )}
 
