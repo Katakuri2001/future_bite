@@ -1425,7 +1425,10 @@ export async function createOrder(data: any): Promise<any> {
     subtotal,
     tax,
     serviceCharge,
-    total,
+    total: total + (data.deliveryFee || 0),
+    orderType: data.orderType || "dine-in",
+    deliveryAddress: data.deliveryAddress || null,
+    deliveryFee: data.deliveryFee || 0,
     status: requestedStatus,
     paymentStatus: requestedPayment,
     specialInstructions: data.specialInstructions || "",
@@ -1437,8 +1440,8 @@ export async function createOrder(data: any): Promise<any> {
   const statements = [
     db
       .prepare(
-        `INSERT INTO orders (id, branch_id, order_number, user_id, table_number, subtotal, tax, service_charge, total, status, payment_status, special_instructions)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO orders (id, branch_id, order_number, user_id, table_number, subtotal, tax, service_charge, total, status, payment_status, special_instructions, order_type, delivery_address, delivery_fee)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         id,
@@ -1452,7 +1455,10 @@ export async function createOrder(data: any): Promise<any> {
         total,
         order.status,
         order.paymentStatus,
-        order.specialInstructions
+        order.specialInstructions,
+        order.orderType,
+        order.deliveryAddress,
+        order.deliveryFee
       ),
   ];
 
@@ -2691,13 +2697,16 @@ export async function createPaidSale(data: any): Promise<{
     orderNumber,
     tableId: data.tableId,
     tableNumber: data.tableNumber || null,
+    orderType: data.orderType || "dine-in",
+    deliveryAddress: data.deliveryAddress || null,
+    deliveryFee: data.deliveryFee || 0,
     items: validatedItems.map((it: any) => ({ ...it, status: "served" })),
     subtotal,
     discount,
     couponCode: appliedCoupon?.code ?? null,
     tax,
     serviceCharge,
-    total,
+    total: total + (data.deliveryFee || 0),
     status: "completed",
     paymentStatus: "paid",
     specialInstructions: data.specialInstructions || "",
@@ -2744,8 +2753,8 @@ export async function createPaidSale(data: any): Promise<{
   const statements = [
     db
       .prepare(
-        `INSERT INTO orders (id, branch_id, order_number, user_id, table_number, subtotal, tax, service_charge, total, status, payment_status, special_instructions, discount, coupon_code)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO orders (id, branch_id, order_number, user_id, table_number, subtotal, tax, service_charge, total, status, payment_status, special_instructions, discount, coupon_code, order_type, delivery_address, delivery_fee)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         id,
@@ -2761,7 +2770,10 @@ export async function createPaidSale(data: any): Promise<{
         "paid",
         order.specialInstructions,
         discount,
-        appliedCoupon?.code ?? null
+        appliedCoupon?.code ?? null,
+        order.orderType,
+        order.deliveryAddress,
+        order.deliveryFee
       ),
     ...validatedItems.map((it: any) =>
       db

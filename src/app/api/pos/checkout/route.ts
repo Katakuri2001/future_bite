@@ -43,6 +43,9 @@ const checkoutSchema = z
     items: z.array(itemSchema).min(1).optional(),
     orderId: z.string().min(1).optional(),
     tableNumber: z.number().int().positive().optional(),
+    orderType: z.enum(["dine-in", "takeaway", "delivery"]).optional().default("dine-in"),
+    deliveryAddress: z.string().max(500).optional(),
+    deliveryFee: z.number().int().min(0).optional().default(0),
     customerName: z.string().optional().default("Guest"),
     /** Guest whose loyalty balance should accrue. Distinct from the cashier. */
     customerId: z.string().optional(),
@@ -80,7 +83,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { items, orderId, tableNumber, customerName, customerId, couponCode, paymentMethod, receiptType } =
+  const { items, orderId, tableNumber, orderType, deliveryAddress, deliveryFee, customerName, customerId, couponCode, paymentMethod, receiptType } =
     parsed.data;
 
   // A coupon may only be spent by the guest it was issued to.

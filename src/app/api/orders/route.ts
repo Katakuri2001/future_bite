@@ -12,6 +12,9 @@ import { requireSession, requireStaff } from "@/lib/auth";
  */
 const orderSchema = z.object({
   tableNumber: z.number().int().positive().optional(),
+  orderType: z.enum(["dine-in", "takeaway", "delivery"]).optional().default("dine-in"),
+  deliveryAddress: z.string().max(500).optional(),
+  deliveryFee: z.number().int().min(0).optional().default(0),
   items: z
     .array(
       z.object({
@@ -86,6 +89,9 @@ export async function POST(request: NextRequest) {
 
     const order = await createOrder({
       tableNumber: tableNumber ?? null,
+      orderType: parsed.data.orderType,
+      deliveryAddress: parsed.data.deliveryAddress ?? null,
+      deliveryFee: parsed.data.deliveryFee ?? 0,
       items: validatedItems,
       specialInstructions,
       // Attribute the order to the signed-in customer so it appears in their
