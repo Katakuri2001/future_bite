@@ -1146,6 +1146,131 @@ export async function cancelWaitlistEntry(id: string): Promise<any | null> {
   return db.prepare("SELECT * FROM waitlist WHERE id = ?").bind(id).first<any>();
 }
 
+// ---- Recipes (dish -> supply links) ----
+
+export async function getRecipe(dishId: string): Promise<any[]> {
+  const db = getDB();
+  const { results } = await db
+    .prepare(
+      `SELECT ds.supply_id, ds.quantity, s.name, s.unit, s.current_stock
+         FROM dish_supplies ds
+         JOIN supplies s ON s.id = ds.supply_id
+        WHERE ds.dish_id = ?`
+    )
+    .bind(dishId)
+    .all<any>();
+  return (results || []).map((r: any) => ({
+    supplyId: r.supply_id,
+    name: r.name,
+    unit: r.unit,
+    quantity: r.quantity,
+    currentStock: r.current_stock,
+  }));
+}
+
+export async function setRecipe(
+  dishId: string,
+  supplies: { supplyId: string; quantity: number }[]
+): Promise<void> {
+  const db = getDB();
+  const statements = [
+    db.prepare("DELETE FROM dish_supplies WHERE dish_id = ?").bind(dishId),
+    ...supplies.map((s) =>
+      db
+        .prepare(
+          "INSERT INTO dish_supplies (dish_id, supply_id, quantity) VALUES (?, ?, ?)"
+        )
+        .bind(dishId, s.supplyId, s.quantity)
+    ),
+  ];
+  await db.batch(statements);
+}
+
+/**
+ * Decrement stock for every dish in a paid order, using the recipe links.
+ *
+ * A dish with no recipe decrements nothing — the feature is opt-in, so
+ * existing catalogues keep working unchanged. Each movement is logged as a
+ * `usage` transaction with the order number as its reference, so the stock
+ * ledger stays auditable.
+ */
+export async function decrementStockForOrder(
+  orderId: string,
+  orderNumber?: string
+): Promise<void> {
+  const db = getDB();
+  const { results: items } = await db
+    .prepare("SELECT menu_item_id, quantity FROM order_items WHERE order_id = ?")
+    .bind(orderId)
+    .all<any>();
+
+  if (!items || items.length === 0) return;
+
+  // Collect the recipe lines for every dish in this order.
+  const dishIds = [...new Set(items.map((i: any) => i.menu_item_id))];
+  const placeholders = dishIds.map(() => "?").join(",");
+  const { results: recipes } = await db
+    .prepare(
+      `SELECT dish_id, supply_id, quantity FROM dish_supplies
+        WHERE dish_id IN (${placeholders})`
+    )
+    .bind(...dishIds)
+    .all<any>();
+
+  if (!recipes || recipes.length === 0) return;
+
+  const recipeByDish = new Map<string, { supplyId: string; quantity: number }[]>();
+  for (const r of recipes) {
+    if (!recipeByDish.has(r.dish_id)) recipeByDish.set(r.dish_id, []);
+    recipeByDish.get(r.dish_id)!.push({
+      supplyId: r.supply_id,
+      quantity: r.quantity,
+    });
+  }
+
+  // Aggregate the total quantity to remove per supply, across all dishes.
+  const toRemove = new Map<string, number>();
+  for (const item of items) {
+    const recipe = recipeByDish.get(item.menu_item_id);
+    if (!recipe) continue;
+    for (const line of recipe) {
+      const current = toRemove.get(line.supplyId) || 0;
+      toRemove.set(line.supplyId, current + line.quantity * item.quantity);
+    }
+  }
+
+  if (toRemove.size === 0) return;
+
+  const statements: any[] = [];
+  for (const [supplyId, qty] of toRemove) {
+    statements.push(
+      db
+        .prepare(
+          `UPDATE supplies SET current_stock = current_stock - ?,
+                  updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE id = ?`
+        )
+        .bind(qty, supplyId)
+    );
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO supply_transactions (id, branch_id, supply_id, type, quantity, total_cost, reference, notes, created_by)
+           VALUES (?, 'default-branch', ?, 'usage', ?, 0, ?, ?, 'system')`
+        )
+        .bind(
+          `tx-${Date.now()}-${supplyId}`,
+          supplyId,
+          -qty,
+          orderNumber || orderId,
+          `Auto-decremented by paid order ${orderNumber || orderId}`
+        )
+    );
+  }
+
+  await db.batch(statements);
+}
+
 export async function setTableStatusByNumber(
   tableNumber: number | null | undefined,
   status: string
@@ -2593,6 +2718,10 @@ export async function createPaidSale(data: any): Promise<{
     await awardLoyaltyPoints(data.userId, total, id, orderNumber);
   }
 
+  // Decrement stock for every dish that has a recipe link. Runs after the sale
+  // is durably recorded, so a failed batch never moves stock.
+  await decrementStockForOrder(id, orderNumber);
+
   await notifyRealtime({ type: "orders" });
   await notifyRealtime({ type: "receipts" });
   return { order, receipt };
@@ -2776,6 +2905,9 @@ export async function settleExistingOrder(data: {
     }
     await awardLoyaltyPoints(customerId, total, order.id, order.order_number);
   }
+
+  // Decrement stock for every dish that has a recipe link.
+  await decrementStockForOrder(order.id, order.order_number);
 
   // Payment closes the table.
   await setTableStatusByNumber(order.table_number, "available");
@@ -3067,6 +3199,9 @@ export async function payReceipt(data: {
     .bind(receipt.order_id)
     .first<any>();
   await setTableStatusByNumber(orderRow?.table_number, "available");
+
+  // Decrement stock for every dish that has a recipe link.
+  await decrementStockForOrder(receipt.order_id, receipt.order_number);
 
   await notifyRealtime({ type: "orders" });
   await notifyRealtime({ type: "receipts" });

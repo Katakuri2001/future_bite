@@ -423,6 +423,20 @@ CREATE TABLE IF NOT EXISTS addons (
 );
 CREATE INDEX IF NOT EXISTS idx_addons_available ON addons(is_available);
 
+-- =============================================
+-- RECIPES (dish -> supply links)
+-- =============================================
+CREATE TABLE IF NOT EXISTS dish_supplies (
+  dish_id TEXT NOT NULL,
+  supply_id TEXT NOT NULL,
+  quantity REAL NOT NULL DEFAULT 1,
+  PRIMARY KEY (dish_id, supply_id),
+  FOREIGN KEY (dish_id) REFERENCES dishes(id) ON DELETE CASCADE,
+  FOREIGN KEY (supply_id) REFERENCES supplies(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_dish_supplies_dish ON dish_supplies(dish_id);
+CREATE INDEX IF NOT EXISTS idx_dish_supplies_supply ON dish_supplies(supply_id);
+
 INSERT OR IGNORE INTO addons (id, name, price) VALUES
   ('addon-egg',         'Extra egg',               1500),
   ('addon-rare',        'Rare finish',             2500),
