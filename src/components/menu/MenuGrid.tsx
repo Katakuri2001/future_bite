@@ -19,6 +19,7 @@ interface MenuItem {
   dietary: string[];
   allergens: string[];
   isAvailable: boolean;
+  isSet?: boolean;
 }
 
 interface MenuCategory {
@@ -69,6 +70,7 @@ export default function MenuGrid() {
         name: item.name,
         price: item.price,
         imageUrl: item.imageUrl,
+        isSet: item.isSet,
       });
     },
     [addItem]

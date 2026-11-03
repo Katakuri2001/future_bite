@@ -17,6 +17,8 @@ export interface CartItem {
   quantity: number;
   specialInstructions?: string;
   imageUrl?: string;
+  /** Tasting menu / combo. Expanded into its dishes at checkout. */
+  isSet?: boolean;
 }
 
 interface CartContextValue {

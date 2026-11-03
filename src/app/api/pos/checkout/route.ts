@@ -3,7 +3,9 @@ import { z } from "zod";
 import {
   createPaidSale,
   getDishesByIds,
+  getDishById,
   getAddonsByIds,
+  getMenuSetById,
   getDB,
   settleExistingOrder,
 } from "@/lib/db";
@@ -13,6 +15,7 @@ import { priceCartLine, AddonError, computeTotals } from "@/lib/pricing";
 const itemSchema = z.object({
   menuItemId: z.string().min(1),
   quantity: z.number().int().positive(),
+  isSet: z.boolean().optional().default(false),
   /**
    * Ids and quantities only. A price field is deliberately absent: addon
    * amounts are the server's to decide. Sending one is rejected outright so a
@@ -150,8 +153,21 @@ export async function POST(request: NextRequest) {
   // Server-side price validation: prices always come from the DB, never the client.
 // Settling paths have returned by now, so a cart is guaranteed here.
   const cart = items!;
-  const dishes = await getDishesByIds(cart.map((i) => i.menuItemId));
+  // A cart line may be a single dish or a tasting menu (menu set). Sets are
+  // expanded into their constituent dishes at the set price, so the kitchen
+  // ticket lists what actually has to be cooked.
+  const dishIds = cart
+    .filter((l) => !l.isSet)
+    .map((l) => l.menuItemId);
+  const setIds = cart.filter((l) => l.isSet).map((l) => l.menuItemId);
+
+  const dishes = await getDishesByIds(dishIds);
   const dishMap = new Map(dishes.map((d) => [d.id, d]));
+
+  const sets = await Promise.all(setIds.map((id) => getMenuSetById(id)));
+  const setMap = new Map(
+    sets.filter(Boolean).map((s: any) => [s.id, s])
+  );
 
   // One catalogue read for the whole cart rather than one per line.
   const addonMap = new Map(
@@ -162,6 +178,39 @@ export async function POST(request: NextRequest) {
 
   const validatedItems: any[] = [];
   for (const line of cart) {
+    if (line.isSet) {
+      const set = setMap.get(line.menuItemId);
+      if (!set || !set.isAvailable) {
+        return NextResponse.json(
+          { success: false, error: `Menu set not found: ${line.menuItemId}` },
+          { status: 400 }
+        );
+      }
+      // Expand the set into its dishes, each priced at the set's per-dish
+      // share. The set price is the authority; if it is zero, fall back to
+      // the computed sum of the dishes.
+      const setPrice = set.effectivePrice || set.computedPrice || 0;
+      const itemCount = set.items.reduce(
+        (s: number, it: any) => s + (it.quantity || 1),
+        0
+      );
+      const perDish = itemCount > 0 ? Math.round(setPrice / itemCount) : 0;
+      for (const si of set.items) {
+        const dish = await getDishById(si.dishId);
+        if (!dish) continue;
+        validatedItems.push({
+          menuItemId: dish.id,
+          name: `${set.name} — ${si.name}`,
+          quantity: (si.quantity || 1) * line.quantity,
+          price: perDish,
+          variants: [],
+          addons: [],
+          specialInstructions: line.specialInstructions,
+        });
+      }
+      continue;
+    }
+
     const dish = dishMap.get(line.menuItemId);
     if (!dish) {
       return NextResponse.json(

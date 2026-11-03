@@ -58,6 +58,7 @@ export default function OrderPage() {
           items: items.map((i) => ({
             menuItemId: i.menuItemId,
             quantity: i.quantity,
+            isSet: i.isSet,
             specialInstructions: i.specialInstructions || "",
           })),
         }),

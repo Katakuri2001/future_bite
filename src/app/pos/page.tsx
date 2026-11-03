@@ -43,6 +43,7 @@ interface CartLine {
   name: string;
   price: number;
   quantity: number;
+  isSet?: boolean;
 }
 
 const inputCls =
@@ -164,6 +165,7 @@ export default function POSWorkspace() {
           items: cart.map((l) => ({
             menuItemId: l.menuItemId,
             quantity: l.quantity,
+            isSet: l.isSet,
             addons: [],
             specialInstructions: "",
           })),
