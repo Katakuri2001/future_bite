@@ -247,6 +247,23 @@ export default function AccountPage() {
                           {o.paymentStatus}
                         </span>
                       </div>
+                      {o.items && o.items.length > 0 && (
+                        <ul className="mt-2 space-y-0.5">
+                          {o.items.map((it: any, i: number) => (
+                            <li
+                              key={i}
+                              className="flex justify-between text-[11px] text-ivory-dim"
+                            >
+                              <span className="truncate">
+                                {it.quantity} × {it.name}
+                              </span>
+                              <span className="tabular-nums shrink-0 ml-2">
+                                {formatKyat(it.price * it.quantity)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </li>
                   ))}
                 </ul>

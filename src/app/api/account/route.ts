@@ -68,6 +68,31 @@ export async function GET(request: NextRequest) {
         .first<any>(),
     ]);
 
+  // Fetch line items for all of this customer's orders in one batched query
+  // rather than one round trip per order.
+  const orderIds = (orders.results || []).map((o: any) => o.id);
+  const itemMap = new Map<string, any[]>();
+  if (orderIds.length > 0) {
+    const placeholders = orderIds.map(() => "?").join(",");
+    const { results: allItems } = await db
+      .prepare(
+        `SELECT order_id, name, quantity, price, special_instructions
+           FROM order_items WHERE order_id IN (${placeholders})
+           ORDER BY created_at ASC`
+      )
+      .bind(...orderIds)
+      .all<any>();
+    for (const it of allItems || []) {
+      if (!itemMap.has(it.order_id)) itemMap.set(it.order_id, []);
+      itemMap.get(it.order_id)!.push({
+        name: it.name,
+        quantity: it.quantity,
+        price: it.price,
+        specialInstructions: it.special_instructions || "",
+      });
+    }
+  }
+
   const points = profile?.points || 0;
   // 100 points earns a 10,000 K coupon.
   const nextCouponAt = 100;
@@ -105,6 +130,7 @@ export async function GET(request: NextRequest) {
         status: o.status,
         paymentStatus: o.payment_status,
         createdAt: o.created_at,
+        items: itemMap.get(o.id) || [],
       })),
       reservations: (reservations.results || []).map((r: any) => ({
         id: r.id,
