@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Package, Plus, X, Minus, History, Loader2 } from "lucide-react";
+import { Package, Plus, X, Minus, History, Loader2, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Ingredient {
@@ -45,7 +45,7 @@ export default function KitchenIngredients() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
   const [registerId, setRegisterId] = useState<string | null>(null);
-  const [mode, setMode] = useState<"usage" | "restock">("usage");
+  const [mode, setMode] = useState<"usage" | "restock" | "waste">("usage");
   const [quantity, setQuantity] = useState("");
   const [notes, setNotes] = useState("");
   const [showHistory, setShowHistory] = useState(false);
@@ -236,6 +236,19 @@ export default function KitchenIngredients() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => setMode("waste")}
+                    className={cn(
+                      "flex-1 text-[10px] uppercase tracking-wider py-1.5 border transition-colors",
+                      mode === "waste"
+                        ? "border-warning text-warning bg-warning/10"
+                        : "border-border-light text-ivory-dim hover:border-warning/50"
+                    )}
+                  >
+                    <Trash2 size={11} className="inline mr-1" />
+                    Waste
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setRegisterId(null)}
                     className="text-ivory-dim hover:text-ivory px-1"
                     aria-label="Cancel"
@@ -267,10 +280,18 @@ export default function KitchenIngredients() {
                     "w-full py-2 text-[10px] font-bold tracking-[0.15em] uppercase disabled:opacity-50",
                     mode === "usage"
                       ? "bg-error text-ivory hover:bg-error/90"
+                      : mode === "waste"
+                      ? "bg-warning text-bg hover:bg-warning/90"
                       : "bg-success text-bg hover:bg-success/90"
                   )}
                 >
-                  {busy ? "Saving..." : mode === "usage" ? "Register Usage" : "Restock"}
+                  {busy
+                    ? "Saving..."
+                    : mode === "usage"
+                    ? "Register Usage"
+                    : mode === "waste"
+                    ? "Register Waste"
+                    : "Restock"}
                 </button>
               </form>
             ) : (

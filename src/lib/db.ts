@@ -1621,6 +1621,128 @@ export async function updateOrderItemStatus(
  * operation and does not exist yet. Loyalty points are never reversed because
  * they were only ever minted on payment, which has not happened.
  */
+/**
+ * Reverse a settled payment.
+ *
+ * Refunds are the inverse of settlement: money goes back, points come off the
+ * guest's balance, a coupon that was spent is released for reuse, and the
+ * order is marked refunded rather than cancelled (cancellation is for unpaid
+ * orders only).
+ *
+ * Full refund only. Partial refunds would need a payments ledger that does not
+ * exist yet; the audit flagged that as a gap and it is deliberately deferred.
+ */
+export async function refundOrder(data: {
+  orderId: string;
+  reason?: string;
+  refundedBy?: string;
+}): Promise<any> {
+  const db = getDB();
+  const order = await db
+    .prepare("SELECT * FROM orders WHERE id = ?")
+    .bind(data.orderId)
+    .first<any>();
+  if (!order) throw new Error("Order not found");
+  if (order.payment_status !== "paid") {
+    throw new Error("Only paid orders can be refunded");
+  }
+  if (order.status === "refunded") {
+    throw new Error("This order was already refunded");
+  }
+
+  // Reverse the loyalty ledger: subtract the points that were earned and the
+  // money that was counted. Points never go negative — a guest who spent
+  // their points before the refund keeps the remainder at zero.
+  const pointsEarned = await db
+    .prepare(
+      "SELECT COALESCE(SUM(points_earned), 0) AS p FROM loyalty_events WHERE order_id = ?"
+    )
+    .bind(data.orderId)
+    .first<any>();
+
+  const toReverse = pointsEarned?.p || 0;
+  if (toReverse > 0) {
+    await db
+      .prepare(
+        "UPDATE users SET points = MAX(0, points - ?), total_spent = MAX(0, total_spent - ?) WHERE id = ?"
+      )
+      .bind(toReverse, order.total, order.user_id)
+      .run();
+    await db
+      .prepare(
+        "INSERT INTO loyalty_events (id, branch_id, user_id, order_id, points_earned, reason) VALUES (?, ?, ?, ?, ?, ?)"
+      )
+      .bind(
+        `loy-refund-${Date.now()}`,
+        "default-branch",
+        order.user_id,
+        data.orderId,
+        -toReverse,
+        `Refunded ${toReverse} pts for order ${order.order_number}`
+      )
+      .run();
+  }
+
+  // Release a coupon that was spent on this bill so it can be used again.
+  if (order.coupon_code) {
+    await db
+      .prepare(
+        "UPDATE coupons SET is_used = 0 WHERE code = ? AND user_id = ?"
+      )
+      .bind(order.coupon_code, order.user_id)
+      .run();
+  }
+
+  // Record the refund for the audit trail.
+  const refundId = `ref-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  await db
+    .prepare(
+      `INSERT INTO refunds (id, branch_id, order_id, receipt_id, amount, reason, created_by)
+       VALUES (?, 'default-branch', ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      refundId,
+      data.orderId,
+      order.receipt_id || null,
+      order.total,
+      data.reason || null,
+      data.refundedBy || null
+    )
+    .run();
+
+  // Mark the order refunded and the receipt refunded (not void — money did
+  // change hands, it was just returned).
+  const refundedAt = new Date().toISOString();
+  await db
+    .prepare(
+      `UPDATE orders SET status = 'refunded', payment_status = 'refunded',
+              refunded_at = ?, refunded_by = ?, refund_reason = ?,
+              updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+        WHERE id = ?`
+    )
+    .bind(refundedAt, data.refundedBy || null, data.reason || null, data.orderId)
+    .run();
+
+  await db
+    .prepare(
+      `UPDATE receipts SET status = 'refunded', voided_at = ?, void_reason = ?
+        WHERE order_id = ? AND status = 'paid'`
+    )
+    .bind(refundedAt, data.reason || null, data.orderId)
+    .run();
+
+  // Free the table.
+  await setTableStatusByNumber(order.table_number, "available");
+
+  await notifyRealtime({ type: "orders", orderId: data.orderId });
+  await notifyRealtime({ type: "receipts" });
+
+  return db
+    .prepare("SELECT * FROM orders WHERE id = ?")
+    .bind(data.orderId)
+    .first<any>();
+}
+
 export async function cancelOrder(orderId: string): Promise<any | null> {
   const db = getDB();
   const order = await db
