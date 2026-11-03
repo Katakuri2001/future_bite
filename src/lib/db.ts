@@ -3295,6 +3295,8 @@ export async function recordPayment(data: {
   amount: number;
   method: string;
   createdBy?: string;
+  /** Optional tip on top of the payment amount. */
+  tipAmount?: number;
 }): Promise<{
   paymentId: string;
   paidSoFar: number;
@@ -3302,6 +3304,7 @@ export async function recordPayment(data: {
   fullyPaid: boolean;
   pointsEarned: number;
   pointsBalance: number | null;
+  tipAmount: number;
 }> {
   const db = getDB();
   const receipt = await db
@@ -3320,6 +3323,8 @@ export async function recordPayment(data: {
   const amount = Math.max(0, Math.round(data.amount));
   if (amount <= 0) throw new Error("Payment amount must be positive");
 
+  const tipAmount = Math.max(0, Math.round(data.tipAmount || 0));
+
   const paymentId = `pay-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   await db
     .prepare(
@@ -3328,6 +3333,18 @@ export async function recordPayment(data: {
     )
     .bind(paymentId, data.receiptId, amount, data.method, data.createdBy || null)
     .run();
+
+  // Record a tip, if any.
+  if (tipAmount > 0) {
+    const tipId = `tip-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    await db
+      .prepare(
+        `INSERT INTO tips (id, branch_id, receipt_id, amount, created_by)
+         VALUES (?, 'default-branch', ?, ?, ?, ?)`
+      )
+      .bind(tipId, data.receiptId, tipAmount, data.createdBy || null)
+      .run();
+  }
 
   // How much has been paid so far?
   const { results: payments } = await db
@@ -3406,6 +3423,7 @@ export async function recordPayment(data: {
     fullyPaid,
     pointsEarned,
     pointsBalance,
+    tipAmount,
   };
 }
 
@@ -3421,6 +3439,7 @@ export async function payReceipt(data: {
   paymentMethod?: string;
   receiptType?: string;
   createdBy?: string;
+  tipAmount?: number;
 }): Promise<{ receipt: any; pointsEarned: number }> {
   // Full payment in one step: delegate to recordPayment with the full amount.
   const receipt = await getDB()
@@ -3434,6 +3453,7 @@ export async function payReceipt(data: {
     amount: receipt.total,
     method: data.paymentMethod || "cash",
     createdBy: data.createdBy,
+    tipAmount: data.tipAmount,
   });
 
   // Update receipt_type if specified.

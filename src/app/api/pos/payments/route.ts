@@ -7,6 +7,7 @@ const paySchema = z.object({
   receiptId: z.string().min(1),
   amount: z.number().int().positive(),
   method: z.enum(["cash", "card", "qr"]).default("cash"),
+  tipAmount: z.number().int().min(0).optional().default(0),
 });
 
 /**
@@ -46,6 +47,7 @@ export async function POST(request: NextRequest) {
       amount: parsed.data.amount,
       method: parsed.data.method,
       createdBy: auth.session.name || "cashier",
+      tipAmount: parsed.data.tipAmount,
     });
 
     return NextResponse.json({
@@ -58,6 +60,7 @@ export async function POST(request: NextRequest) {
         remaining: Math.max(0, result.total - result.paidSoFar),
         pointsEarned: result.pointsEarned,
         pointsBalance: result.pointsBalance,
+        tipAmount: result.tipAmount,
       },
       message: result.fullyPaid
         ? "Bill fully paid"
@@ -88,9 +91,10 @@ export async function GET(request: NextRequest) {
   try {
     const payments = await listPayments(receiptId);
     const totalPaid = payments.reduce((s: number, p: any) => s + p.amount, 0);
+    const totalTipped = payments.reduce((s: number, p: any) => s + (p.tip_amount || 0), 0);
     return NextResponse.json({
       success: true,
-      data: { payments, totalPaid },
+      data: { payments, totalPaid, totalTipped },
     });
   } catch (e) {
     console.error("payments GET error:", e);
