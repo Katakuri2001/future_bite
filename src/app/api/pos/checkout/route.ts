@@ -132,10 +132,17 @@ export async function POST(request: NextRequest) {
       });
     } catch (e: any) {
       const message = String((e && (e.message || e)) || e);
-      const conflict = /not found|already|settled|cancelled|required|invalid coupon/i.test(message);
+      const safe = /not found|already|settled|cancelled|required|invalid coupon|unavailable/i.test(message);
+      if (safe) {
+        return NextResponse.json(
+          { success: false, error: message },
+          { status: 409 }
+        );
+      }
+      console.error("pos/checkout error:", e);
       return NextResponse.json(
-        { success: false, error: message },
-        { status: conflict ? 409 : 500 }
+        { success: false, error: "Could not complete that checkout" },
+        { status: 500 }
       );
     }
   }

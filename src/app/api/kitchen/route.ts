@@ -11,25 +11,41 @@ import { requireKitchen } from "@/lib/auth";
 export async function GET(request: NextRequest) {
   const auth = await requireKitchen(request);
   if (auth instanceof NextResponse) return auth;
-  const data = await listKitchenOrders();
-  return NextResponse.json({ success: true, data });
+  try {
+    const data = await listKitchenOrders();
+    return NextResponse.json({ success: true, data });
+  } catch (e) {
+    console.error("kitchen GET error:", e);
+    return NextResponse.json(
+      { success: false, error: "Could not load the kitchen queue" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(request: NextRequest) {
   const auth = await requireKitchen(request);
   if (auth instanceof NextResponse) return auth;
-  const body = await request.json();
-  const { orderNumber, tableNumber, items, priority, status } = body;
+  try {
+    const body = await request.json();
+    const { orderNumber, tableNumber, items, priority, status } = body;
 
-  const newOrder = await createKitchenOrder({
-    orderNumber,
-    tableNumber,
-    items,
-    priority,
-    status,
-  });
+    const newOrder = await createKitchenOrder({
+      orderNumber,
+      tableNumber,
+      items,
+      priority,
+      status,
+    });
 
-  return NextResponse.json({ success: true, data: newOrder });
+    return NextResponse.json({ success: true, data: newOrder });
+  } catch (e) {
+    console.error("kitchen POST error:", e);
+    return NextResponse.json(
+      { success: false, error: "Could not create that kitchen ticket" },
+      { status: 400 }
+    );
+  }
 }
 
 /**

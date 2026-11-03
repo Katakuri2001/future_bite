@@ -58,12 +58,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, data: result });
   } catch (e: any) {
     const message = String((e && (e.message || e)) || e);
-    // A dish that vanished or sold out is the caller's problem, not a 500.
-    const badInput =
-      message.startsWith("Dish not found") || message.includes("unavailable");
+    // Our own domain messages are safe to surface; anything else is a database
+    // or infrastructure failure and must not leak schema or query details.
+    const safe =
+      message.startsWith("Dish not found") ||
+      message.includes("unavailable") ||
+      message.includes("not found");
+    if (safe) {
+      return NextResponse.json(
+        { success: false, error: message },
+        { status: 409 }
+      );
+    }
+    console.error("waiter/orders error:", e);
     return NextResponse.json(
-      { success: false, error: message },
-      { status: badInput ? 409 : 500 }
+      { success: false, error: "Could not place that order" },
+      { status: 500 }
     );
   }
 }

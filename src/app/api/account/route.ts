@@ -15,6 +15,8 @@ export async function GET(request: NextRequest) {
   const userId = auth.session.userId;
   const db = getDB();
 
+  try {
+
   const [profile, coupons, orders, reservations, pointsToNext, events] =
     await Promise.all([
       db
@@ -130,4 +132,11 @@ export async function GET(request: NextRequest) {
       },
     },
   });
+  } catch (e) {
+    console.error("account error:", e);
+    return NextResponse.json(
+      { success: false, error: "Could not load your account" },
+      { status: 500 }
+    );
+  }
 }

@@ -10,13 +10,21 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const receipt = await getReceipt(id);
-  if (!receipt) {
+  try {
+    const { id } = await params;
+    const receipt = await getReceipt(id);
+    if (!receipt) {
+      return NextResponse.json(
+        { success: false, error: "Receipt not found" },
+        { status: 404 }
+      );
+    }
+    return NextResponse.json({ success: true, data: receipt });
+  } catch (e) {
+    console.error("receipts/[id] error:", e);
     return NextResponse.json(
-      { success: false, error: "Receipt not found" },
-      { status: 404 }
+      { success: false, error: "Could not load that receipt" },
+      { status: 500 }
     );
   }
-  return NextResponse.json({ success: true, data: receipt });
 }

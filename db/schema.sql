@@ -291,21 +291,6 @@ CREATE TABLE IF NOT EXISTS supply_transactions (
 CREATE INDEX IF NOT EXISTS idx_supply_tx_supply ON supply_transactions(supply_id);
 CREATE INDEX IF NOT EXISTS idx_supply_tx_created ON supply_transactions(created_at);
 
--- =============================================
--- TESTIMONIALS / RATINGS
--- =============================================
-CREATE TABLE IF NOT EXISTS ratings (
-  id TEXT PRIMARY KEY,
-  branch_id TEXT NOT NULL DEFAULT 'default-branch',
-  user_id TEXT,
-  name TEXT NOT NULL,
-  rating INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
-  text TEXT,
-  date TEXT,
-  is_public INTEGER DEFAULT 0,
-  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  FOREIGN KEY (branch_id) REFERENCES branches(id)
-);
 
 -- =============================================
 -- COUNTERS (for confirmation codes, order numbers)
