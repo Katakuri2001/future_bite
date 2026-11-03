@@ -1306,6 +1306,55 @@ export async function autoHideSoldOutDishes(): Promise<void> {
     .run();
 }
 
+// ---- Expenses ----
+
+export async function listExpenses(opts: { from?: string; to?: string } = {}): Promise<any[]> {
+  const db = getDB();
+  const params: any[] = [];
+  let sql = "SELECT * FROM expenses WHERE 1=1";
+  if (opts.from) { sql += " AND date >= ?"; params.push(opts.from); }
+  if (opts.to) { sql += " AND date <= ?"; params.push(opts.to); }
+  sql += " ORDER BY date DESC, created_at DESC";
+  const { results } = await db.prepare(sql).bind(...params).all<any>();
+  return (results || []).map((r: any) => ({
+    id: r.id,
+    category: r.category,
+    amount: r.amount,
+    description: r.description,
+    date: r.date,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+  }));
+}
+
+export async function createExpense(data: {
+  category: string;
+  amount: number;
+  description?: string;
+  date: string;
+  createdBy?: string;
+}): Promise<any> {
+  const db = getDB();
+  const id = `exp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  await db
+    .prepare(
+      `INSERT INTO expenses (id, branch_id, category, amount, description, date, created_by)
+       VALUES (?, 'default-branch', ?, ?, ?, ?, ?)`
+    )
+    .bind(id, data.category, data.amount, data.description || null, data.date, data.createdBy || null)
+    .run();
+  return db.prepare("SELECT * FROM expenses WHERE id = ?").bind(id).first<any>();
+}
+
+export async function deleteExpense(id: string): Promise<boolean> {
+  const db = getDB();
+  const result: any = await db
+    .prepare("DELETE FROM expenses WHERE id = ?")
+    .bind(id)
+    .run();
+  return (result?.meta?.changes ?? 0) > 0;
+}
+
 export async function setTableStatusByNumber(
   tableNumber: number | null | undefined,
   status: string
