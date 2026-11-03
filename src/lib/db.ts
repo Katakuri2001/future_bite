@@ -1269,6 +1269,41 @@ export async function decrementStockForOrder(
   }
 
   await db.batch(statements);
+
+  // A dish whose recipe depends on a supply that just ran out is no longer
+  // sellable. Mark it unavailable so it drops off the customer menu and the
+  // kitchen cannot keep plating it. A dish with no recipe is unaffected.
+  await autoHideSoldOutDishes();
+}
+
+/**
+ * Mark any dish unavailable when one of its recipe supplies has run out.
+ *
+ * Runs after stock decrement. Dishes with no recipe link are never touched,
+ * so the feature is opt-in and backward-compatible.
+ */
+export async function autoHideSoldOutDishes(): Promise<void> {
+  const db = getDB();
+  const { results } = await db
+    .prepare(
+      `SELECT DISTINCT ds.dish_id
+         FROM dish_supplies ds
+         JOIN supplies s ON s.id = ds.supply_id
+        WHERE s.current_stock <= 0`
+    )
+    .all<any>();
+
+  if (!results || results.length === 0) return;
+
+  const placeholders = results.map(() => "?").join(",");
+  await db
+    .prepare(
+      `UPDATE dishes SET is_available = 0,
+              updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+        WHERE id IN (${placeholders}) AND is_available = 1`
+    )
+    .bind(...results.map((r: any) => r.dish_id))
+    .run();
 }
 
 export async function setTableStatusByNumber(
