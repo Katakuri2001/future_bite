@@ -15,6 +15,7 @@ import {
   getDishesByIds,
   nextUniqueNumber,
   updateOrderItemStatus,
+  setTableStatusByNumber,
   WAITER_ITEM_FLOW,
 } from "./db";
 
@@ -186,6 +187,8 @@ export async function takeTableOrder(data: {
       .prepare("SELECT 1 FROM kitchen_orders WHERE order_id = ? LIMIT 1")
       .bind(existing.id)
       .all<any>();
+
+    await setTableStatusByNumber(tableNumber, "seated");
     if (!ko || ko.length === 0) {
       await db
         .prepare(
@@ -248,6 +251,7 @@ export async function takeTableOrder(data: {
     ...insertItem(orderId),
   ]);
 
+  await setTableStatusByNumber(tableNumber, "seated");
   return { orderId, orderNumber, appended: false };
 }
 

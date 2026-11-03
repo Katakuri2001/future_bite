@@ -1023,6 +1023,26 @@ export async function reservationsOn(date: string, time?: string): Promise<any[]
 }
 
 // ---- Orders ----
+/**
+ * Flip a table's status. Best-effort: a missing table (walk-in, takeaway,
+ * or a table that was deleted from the floor plan) must not break the order
+ * path that called it.
+ */
+export async function setTableStatusByNumber(
+  tableNumber: number | null | undefined,
+  status: string
+): Promise<void> {
+  if (!tableNumber) return;
+  try {
+    await getDB()
+      .prepare("UPDATE tables SET status = ? WHERE number = ?")
+      .bind(status, tableNumber)
+      .run();
+  } catch {
+    // Table may not exist (takeaway, deleted). Never fail the order path.
+  }
+}
+
 export async function createOrder(data: any): Promise<any> {
   const id = data.id || `ord-${generateToken().slice(0, 8)}`;
   const orderNumber =
@@ -1140,6 +1160,13 @@ export async function createOrder(data: any): Promise<any> {
   // points and `total_spent` only ever counts money actually received.
 
   await notifyRealtime({ type: "orders" });
+
+  // A table with an open order is seated, not available. Only dine-in orders
+  // touch the floor plan; takeaway has no table.
+  if (data.tableNumber) {
+    await setTableStatusByNumber(data.tableNumber, "seated");
+  }
+
   return order;
 }
 
@@ -1624,6 +1651,9 @@ export async function cancelOrder(orderId: string): Promise<any | null> {
   if (unpaidBill) {
     await voidReceipt({ receiptId: unpaidBill.id, reason: "Order cancelled" });
   }
+
+  // Cancellation frees the table.
+  await setTableStatusByNumber(order.table_number, "available");
 
   await recomputeOrderStatus(orderId);
   await notifyRealtime({ type: "orders", orderId });
@@ -2503,6 +2533,9 @@ export async function settleExistingOrder(data: {
     await awardLoyaltyPoints(customerId, total, order.id, order.order_number);
   }
 
+  // Payment closes the table.
+  await setTableStatusByNumber(order.table_number, "available");
+
   await notifyRealtime({ type: "orders" });
   await notifyRealtime({ type: "receipts" });
   return { order: updated, receipt };
@@ -2783,6 +2816,13 @@ export async function payReceipt(data: {
       )
       .bind(receipt.order_id),
   ]);
+
+  // Payment closes the table.
+  const orderRow = await db
+    .prepare("SELECT table_number FROM orders WHERE id = ?")
+    .bind(receipt.order_id)
+    .first<any>();
+  await setTableStatusByNumber(orderRow?.table_number, "available");
 
   await notifyRealtime({ type: "orders" });
   await notifyRealtime({ type: "receipts" });
