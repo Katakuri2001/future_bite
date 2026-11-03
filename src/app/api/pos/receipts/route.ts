@@ -1,33 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requirePOS } from "@/lib/auth";
-import { issueTableBill, payReceipt, voidReceipt, getDB } from "@/lib/db";
+import { issueTableBill, getDB, payReceipt, voidReceipt } from "@/lib/db";
 
 /**
- * Table bills.
+ * Issue a bill for a table that has already eaten.
  *
- * POST   — issue a bill for a table that has already eaten. Creates an UNPAID
- *          receipt the waiter hands over. No money moves and no points are
- *          minted here: those happen at mark-paid, so a bill voided in the
- *          meantime costs nothing.
- * GET    — receipts grouped by table, so the cashier works the floor rather
- *          than scanning a flat list.
- * PATCH  — settle or withdraw a bill. `paid` is the only transition that moves
- *          money, and so the only one that mints points or spends a coupon.
+ * Creates an UNPAID receipt the waiter hands over. No money moves and no
+ * points are minted here — those happen when the bill is marked paid, so a
+ * bill that is voided in the meantime costs nothing.
+ *
+ * A bill can be split equally among N guests (splitCount). Each guest gets
+ * their own receipt for their share.
  */
-
 const issueSchema = z.object({
   orderId: z.string().min(1),
   customerId: z.string().optional(),
   couponCode: z.string().optional(),
-});
-
-const patchSchema = z.object({
-  receiptId: z.string().min(1),
-  status: z.enum(["paid", "void"]),
-  paymentMethod: z.enum(["cash", "card", "qr"]).optional(),
-  receiptType: z.enum(["e", "physical"]).optional(),
-  voidReason: z.string().max(200).optional(),
+  splitCount: z.number().int().min(1).max(10).optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -53,10 +43,11 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { receipt } = await issueTableBill({
+    const { receipt, receipts, order } = await issueTableBill({
       orderId: parsed.data.orderId,
       customerId: parsed.data.customerId,
       couponCode: parsed.data.couponCode,
+      splitCount: parsed.data.splitCount,
       issuedBy: auth.session.name || "cashier",
     });
 
@@ -77,6 +68,13 @@ export async function POST(request: NextRequest) {
         status: receipt.status,
         billedAt: receipt.billedAt,
         items: receipt.items,
+        splitCount: parsed.data.splitCount || 1,
+        receipts: (receipts || []).map((r: any) => ({
+          id: r.id,
+          receiptNo: r.receiptNo,
+          total: r.total,
+          splitIndex: r.splitIndex,
+        })),
       },
     });
   } catch (e: any) {
@@ -92,6 +90,9 @@ export async function POST(request: NextRequest) {
   }
 }
 
+/**
+ * Receipts for the cashier to work through, grouped by table.
+ */
 export async function GET(request: NextRequest) {
   const auth = await requirePOS(request);
   if (auth instanceof NextResponse) return auth;
@@ -126,7 +127,6 @@ export async function GET(request: NextRequest) {
 
     const receipts = rows.results || [];
 
-    // Group by table so the cashier sees the floor, not a flat list.
     const byTable = new Map<string, any[]>();
     for (const r of receipts) {
       const key = r.table_number != null ? `T${r.table_number}` : "No table";
@@ -179,6 +179,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/**
+ * Settle or withdraw a bill the cashier issued.
+ */
 export async function PATCH(request: NextRequest) {
   const auth = await requirePOS(request);
   if (auth instanceof NextResponse) return auth;
@@ -193,7 +196,15 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  const parsed = patchSchema.safeParse(body);
+  const schema = z.object({
+    receiptId: z.string().min(1),
+    status: z.enum(["paid", "void"]),
+    paymentMethod: z.enum(["cash", "card", "qr"]).optional(),
+    receiptType: z.enum(["e", "physical"]).optional(),
+    voidReason: z.string().max(200).optional(),
+  });
+
+  const parsed = schema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       {

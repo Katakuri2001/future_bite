@@ -3035,7 +3035,9 @@ export async function issueTableBill(data: {
   issuedBy?: string;
   customerId?: string;
   couponCode?: string;
-}): Promise<{ receipt: any; order: any }> {
+  /** Split the bill equally among this many guests. Defaults to 1. */
+  splitCount?: number;
+}): Promise<{ receipt: any; order: any; receipts?: any[] }> {
   const db = getDB();
 
   const order = await db
@@ -3111,76 +3113,125 @@ export async function issueTableBill(data: {
     discount
   );
 
-  const receiptNo = await nextUniqueNumber(
-    "receipt",
-    "receipts",
-    "receipt_no",
-    (n) => `R-${new Date().getFullYear()}-${String(n).padStart(4, "0")}`
-  );
-  const receiptId = newPublicId("rec");
+  const splitCount = Math.max(1, Math.min(10, data.splitCount || 1));
+
   const billedAt = new Date().toISOString();
 
-  const receipt = {
-    id: receiptId,
-    receiptNo,
-    orderId: data.orderId,
-    orderNumber: order.order_number,
-    customerName: customerName || "Guest",
-    tableNumber: order.table_number,
-    subtotal,
-    discount,
-    couponCode: appliedCoupon?.code ?? null,
-    tax,
-    serviceCharge,
-    total,
-    status: "unpaid",
-    paymentMethod: null,
-    receiptType: "e",
-    createdBy: data.issuedBy || "",
-    items: lines.map((it: any) => ({
-      id: it.id,
-      name: it.name,
-      quantity: it.quantity,
-      price: it.price,
-      variants: safeJson(it.variants),
-      addons: safeJson(it.addons),
-      specialInstructions: it.special_instructions || "",
-    })),
-    billedAt,
-    paidAt: null,
-  };
+  // Split the total into N shares. The first N-1 get floor(total/N); the last
+  // gets the remainder, so the shares always sum to the total exactly.
+  const baseShare = Math.floor(total / splitCount);
+  const shares: number[] = [];
+  for (let i = 0; i < splitCount; i++) {
+    if (i === splitCount - 1) {
+      shares.push(total - baseShare * (splitCount - 1));
+    } else {
+      shares.push(baseShare);
+    }
+  }
 
-  await db.batch([
-    db
-      .prepare(
-        `INSERT INTO receipts
-           (id, branch_id, receipt_no, order_id, order_number, customer_name,
-            table_number, subtotal, discount, coupon_code, tax, service_charge,
-            total, payment_method, receipt_type, created_by, status,
-            billed_at, issued_by)
-         VALUES (?, 'default-branch', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, ?)`
-      )
-      .bind(
-        receipt.id,
-        receipt.receiptNo,
-        order.id,
-        order.order_number,
-        receipt.customerName,
-        order.table_number,
-        subtotal,
-        discount,
-        appliedCoupon?.code ?? null,
-        tax,
-        serviceCharge,
-        total,
-        "cash",
-        receipt.receiptType,
-        receipt.createdBy,
-        billedAt,
-        data.issuedBy || null
-      ),
-    // The bill is locked in: the stored figures become what the guest owes, and
-    // the tab is stamped with the account so a later append cannot change it.
+  const receipts: any[] = [];
+  const statements: any[] = [];
+
+  // Equal split: N-1 shares get floor(total/N); the last gets the remainder so
+  // the shares always sum to the total. Subtotal, tax, service and discount are
+  // split the same way, with the last share absorbing rounding.
+  for (let i = 0; i < splitCount; i++) {
+    const isLast = i === splitCount - 1;
+    const shareTotal = isLast
+      ? total - baseShare * (splitCount - 1)
+      : baseShare;
+
+    const ratio = shareTotal / total;
+    const shareSubtotal = isLast
+      ? subtotal - Math.round(subtotal / splitCount) * (splitCount - 1)
+      : Math.round(subtotal / splitCount);
+    const shareTax = isLast
+      ? tax - Math.round(tax / splitCount) * (splitCount - 1)
+      : Math.round(tax / splitCount);
+    const shareService = isLast
+      ? serviceCharge - Math.round(serviceCharge / splitCount) * (splitCount - 1)
+      : Math.round(serviceCharge / splitCount);
+    const shareDiscount = isLast
+      ? discount - Math.round(discount / splitCount) * (splitCount - 1)
+      : Math.round(discount / splitCount);
+
+    const receiptNo = await nextUniqueNumber(
+      "receipt",
+      "receipts",
+      "receipt_no",
+      (n) => `R-${new Date().getFullYear()}-${String(n).padStart(4, "0")}`
+    );
+    const receiptId = newPublicId("rec");
+
+    const receipt = {
+      id: receiptId,
+      receiptNo,
+      orderId: data.orderId,
+      orderNumber: order.order_number,
+      customerName: customerName || "Guest",
+      tableNumber: order.table_number,
+      subtotal: shareSubtotal,
+      discount: shareDiscount,
+      couponCode: i === 0 ? appliedCoupon?.code ?? null : null,
+      tax: shareTax,
+      serviceCharge: shareService,
+      total: shareTotal,
+      status: "unpaid",
+      paymentMethod: null,
+      receiptType: "e",
+      createdBy: data.issuedBy || "",
+      items: lines.map((it: any) => ({
+        id: it.id,
+        name: it.name,
+        quantity: it.quantity,
+        price: it.price,
+        variants: safeJson(it.variants),
+        addons: safeJson(it.addons),
+        specialInstructions: it.special_instructions || "",
+      })),
+      billedAt,
+      paidAt: null,
+      splitIndex: i + 1,
+      splitCount,
+    };
+
+    receipts.push(receipt);
+
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO receipts
+             (id, branch_id, receipt_no, order_id, order_number, customer_name,
+              table_number, subtotal, discount, coupon_code, tax, service_charge,
+              total, payment_method, receipt_type, created_by, status,
+              billed_at, issued_by)
+           VALUES (?, 'default-branch', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, ?)`
+        )
+        .bind(
+          receipt.id,
+          receipt.receiptNo,
+          order.id,
+          order.order_number,
+          receipt.customerName,
+          order.table_number,
+          shareSubtotal,
+          shareDiscount,
+          i === 0 ? appliedCoupon?.code ?? null : null,
+          shareTax,
+          shareService,
+          shareTotal,
+          "cash",
+          receipt.receiptType,
+          receipt.createdBy,
+          billedAt,
+          data.issuedBy || null
+        )
+    );
+  }
+
+  // The bill is locked in: the stored figures become what the guest owes, and
+  // the tab is stamped with the account so a later append cannot change it.
+  statements.push(
     db
       .prepare(
         `UPDATE orders SET subtotal = ?, tax = ?, service_charge = ?, total = ?,
@@ -3197,11 +3248,15 @@ export async function issueTableBill(data: {
         appliedCoupon?.code ?? null,
         customerId,
         order.id
-      ),
-  ]);
+      )
+  );
 
+  await db.batch(statements);
+
+  await setTableStatusByNumber(order.table_number, "seated");
   await notifyRealtime({ type: "receipts" });
-  return { receipt, order };
+
+  return { receipt: receipts[0], receipts, order };
 }
 
 /**
