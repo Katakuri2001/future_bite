@@ -1355,6 +1355,23 @@ export async function deleteExpense(id: string): Promise<boolean> {
   return (result?.meta?.changes ?? 0) > 0;
 }
 
+export async function listPayments(receiptId: string): Promise<any[]> {
+  const db = getDB();
+  const { results } = await db
+    .prepare(
+      "SELECT id, amount, method, created_by, created_at FROM payments WHERE receipt_id = ? ORDER BY created_at ASC"
+    )
+    .bind(receiptId)
+    .all<any>();
+  return (results || []).map((r: any) => ({
+    id: r.id,
+    amount: r.amount,
+    method: r.method,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+  }));
+}
+
 export async function setTableStatusByNumber(
   tableNumber: number | null | undefined,
   status: string
@@ -3197,12 +3214,28 @@ export async function issueTableBill(data: {
  * Idempotent by refusal rather than by no-op — a double-tap at the till
  * returns a conflict instead of paying twice and minting points twice.
  */
-export async function payReceipt(data: {
+/**
+ * Record a (possibly partial) payment against an issued bill.
+ *
+ * A bill can be settled in more than one transaction — part cash, part card,
+ * or in instalments. The bill becomes `paid` only when the sum of payments
+ * reaches the total, and points are minted at that moment and not before.
+ *
+ * Returns the running total paid and whether the bill is now fully settled.
+ */
+export async function recordPayment(data: {
   receiptId: string;
-  paymentMethod?: string;
-  receiptType?: string;
+  amount: number;
+  method: string;
   createdBy?: string;
-}): Promise<{ receipt: any; pointsEarned: number }> {
+}): Promise<{
+  paymentId: string;
+  paidSoFar: number;
+  total: number;
+  fullyPaid: boolean;
+  pointsEarned: number;
+  pointsBalance: number | null;
+}> {
   const db = getDB();
   const receipt = await db
     .prepare("SELECT * FROM receipts WHERE id = ?")
@@ -3213,89 +3246,143 @@ export async function payReceipt(data: {
   if (receipt.status === "paid") {
     throw new Error("This bill has already been paid");
   }
-  if (receipt.status === "void") {
-    throw new Error("This bill was voided");
-  }
-  if (!receipt.order_id) {
-    throw new Error("This bill is not linked to an order");
+  if (receipt.status === "void" || receipt.status === "refunded") {
+    throw new Error("This bill is no longer payable");
   }
 
-  const paidAt = new Date().toISOString();
-  const method = data.paymentMethod || "cash";
+  const amount = Math.max(0, Math.round(data.amount));
+  if (amount <= 0) throw new Error("Payment amount must be positive");
 
-  // Points accrue on what the guest actually pays, after any discount.
+  const paymentId = `pay-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  await db
+    .prepare(
+      `INSERT INTO payments (id, branch_id, receipt_id, amount, method, created_by)
+       VALUES (?, 'default-branch', ?, ?, ?, ?)`
+    )
+    .bind(paymentId, data.receiptId, amount, data.method, data.createdBy || null)
+    .run();
+
+  // How much has been paid so far?
+  const { results: payments } = await db
+    .prepare("SELECT COALESCE(SUM(amount), 0) AS paid FROM payments WHERE receipt_id = ?")
+    .bind(data.receiptId)
+    .all<any>();
+  const paidSoFar = payments?.[0]?.paid || amount;
+
+  const fullyPaid = paidSoFar >= receipt.total;
+
   let pointsEarned = 0;
   let pointsBalance: number | null = null;
-  const customerId = await orderCustomerId(receipt.order_id);
-  if (customerId) {
-    // The coupon was resolved and applied when the bill was issued, so tax and
-    // service charge were computed on the discounted base. It is only consumed
-    // now — an issued-but-voided bill must not burn the guest's coupon.
-    if (receipt.coupon_code) {
-      await redeemCoupon(customerId, receipt.coupon_code);
+
+  if (fullyPaid) {
+    // Points and coupon settle now, not before — partial payments do not mint.
+    const customerId = await orderCustomerId(receipt.order_id);
+    if (customerId) {
+      if (receipt.coupon_code) {
+        await redeemCoupon(customerId, receipt.coupon_code);
+      }
+      pointsBalance = await awardLoyaltyPointsReturningBalance(
+        customerId,
+        receipt.total,
+        receipt.order_id,
+        receipt.order_number
+      );
+      pointsEarned = pointsForAmount(receipt.total);
     }
-    pointsBalance = await awardLoyaltyPointsReturningBalance(
-      customerId,
-      receipt.total,
-      receipt.order_id,
-      receipt.order_number
+
+    const paidAt = new Date().toISOString();
+    await db.batch([
+      db
+        .prepare(
+          `UPDATE receipts SET status = 'paid', paid_at = ?, payment_method = ?,
+                  points_earned = ?, points_balance = ?
+            WHERE id = ?`
+        )
+        .bind(paidAt, data.method, pointsEarned, pointsBalance, receipt.id),
+      db
+        .prepare(
+          `UPDATE orders SET payment_status = 'paid', status = 'completed',
+                  updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE id = ?`
+        )
+        .bind(receipt.order_id),
+      db
+        .prepare(
+          `UPDATE kitchen_orders SET status = 'completed',
+                  updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+            WHERE order_id = ?`
+        )
+        .bind(receipt.order_id),
+    ]);
+
+    await setTableStatusByNumber(
+      await (async () => {
+        const r = await db
+          .prepare("SELECT table_number FROM orders WHERE id = ?")
+          .bind(receipt.order_id)
+          .first<any>();
+        return r?.table_number;
+      })(),
+      "available"
     );
-    pointsEarned = pointsForAmount(receipt.total);
+
+    await decrementStockForOrder(receipt.order_id, receipt.order_number);
   }
 
-  await db.batch([
-    db
-      .prepare(
-        `UPDATE receipts SET status = 'paid', paid_at = ?, payment_method = ?,
-                receipt_type = COALESCE(?, receipt_type),
-                created_by = COALESCE(?, created_by),
-                points_earned = ?, points_balance = ?
-          WHERE id = ?`
-      )
-      .bind(
-        paidAt,
-        method,
-        data.receiptType ?? null,
-        data.createdBy ?? null,
-        pointsEarned,
-        pointsBalance,
-        receipt.id
-      ),
-    db
-      .prepare(
-        `UPDATE orders SET payment_status = 'paid', status = 'completed',
-                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
-          WHERE id = ?`
-      )
-      .bind(receipt.order_id),
-    db
-      .prepare(
-        `UPDATE kitchen_orders SET status = 'completed',
-                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
-          WHERE order_id = ?`
-      )
-      .bind(receipt.order_id),
-  ]);
-
-  // Payment closes the table.
-  const orderRow = await db
-    .prepare("SELECT table_number FROM orders WHERE id = ?")
-    .bind(receipt.order_id)
-    .first<any>();
-  await setTableStatusByNumber(orderRow?.table_number, "available");
-
-  // Decrement stock for every dish that has a recipe link.
-  await decrementStockForOrder(receipt.order_id, receipt.order_number);
-
-  await notifyRealtime({ type: "orders" });
   await notifyRealtime({ type: "receipts" });
+  if (fullyPaid) await notifyRealtime({ type: "orders" });
 
-  const updated = await db
+  return {
+    paymentId,
+    paidSoFar,
+    total: receipt.total,
+    fullyPaid,
+    pointsEarned,
+    pointsBalance,
+  };
+}
+
+/**
+ * Mark an issued bill fully paid in one step (the common case).
+ *
+ * Kept for backward compatibility with the existing `payReceipt` callers and
+ * the POS "settle" flow. Internally records a single payment for the full
+ * amount.
+ */
+export async function payReceipt(data: {
+  receiptId: string;
+  paymentMethod?: string;
+  receiptType?: string;
+  createdBy?: string;
+}): Promise<{ receipt: any; pointsEarned: number }> {
+  // Full payment in one step: delegate to recordPayment with the full amount.
+  const receipt = await getDB()
+    .prepare("SELECT total FROM receipts WHERE id = ?")
+    .bind(data.receiptId)
+    .first<any>();
+  if (!receipt) throw new Error("Receipt not found");
+
+  const result = await recordPayment({
+    receiptId: data.receiptId,
+    amount: receipt.total,
+    method: data.paymentMethod || "cash",
+    createdBy: data.createdBy,
+  });
+
+  // Update receipt_type if specified.
+  if (data.receiptType) {
+    await getDB()
+      .prepare("UPDATE receipts SET receipt_type = ? WHERE id = ?")
+      .bind(data.receiptType, data.receiptId)
+      .run();
+  }
+
+  const updated = await getDB()
     .prepare("SELECT * FROM receipts WHERE id = ?")
-    .bind(receipt.id)
+    .bind(data.receiptId)
     .first<any>();
 
-  return { receipt: updated, pointsEarned };
+  return { receipt: updated, pointsEarned: result.pointsEarned };
 }
 
 /**
