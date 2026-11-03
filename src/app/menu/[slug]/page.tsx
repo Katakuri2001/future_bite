@@ -3,26 +3,23 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import Image from "next/image";
 import { ArrowRight, Clock, Leaf, Wheat, CircleAlert } from "lucide-react";
+import { cn } from "@/lib/utils";
 import Navigation from "@/components/marketing/Navigation";
 import Footer from "@/components/marketing/Footer";
 import MotionProvider from "@/components/motion/MotionProvider";
 import { FadeIn } from "@/components/motion";
-import { menuItems, menuCategories } from "@/lib/data";
+import { getDishBySlug, listDishes } from "@/lib/db";
 import { formatPrice } from "@/lib/utils";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
-export async function generateStaticParams() {
-  return menuItems.map((item) => ({ slug: item.slug }));
-}
-
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const item = menuItems.find((i) => i.slug === slug);
+  const item = await getDishBySlug(slug);
 
   if (!item) return { title: "Not Found" };
 
@@ -35,19 +32,18 @@ export async function generateMetadata({
 
 export default async function MenuItemPage({ params }: PageProps) {
   const { slug } = await params;
-  const item = menuItems.find((i) => i.slug === slug);
+  const item = await getDishBySlug(slug);
 
   if (!item) {
     notFound();
   }
 
-  const related = menuItems
-    .filter((i) => i.categorySlug === item.categorySlug && i.id !== item.id)
+  const all = await listDishes();
+  const related = all
+    .filter((i: any) => i.categorySlug === item.categorySlug && i.id !== item.id)
     .slice(0, 3);
 
-  const category = menuCategories.find(
-    (c) => c.slug === item.categorySlug
-  );
+  const category = item.category;
 
   return (
     <MotionProvider>
@@ -59,144 +55,115 @@ export default async function MenuItemPage({ params }: PageProps) {
               href="/menu"
               className="inline-flex items-center gap-2 text-ivory-dim hover:text-gold transition-colors text-sm mb-8"
             >
-              <ArrowRight className="rotate-180" size={16} />
+              <ArrowRight size={14} className="rotate-180" />
               Back to Menu
             </Link>
-          </FadeIn>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
-            <FadeIn>
-              <div className="relative aspect-[4/3] overflow-hidden bg-bg-elevated">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+              <div className="relative aspect-[4/3] overflow-hidden">
                 <Image
                   src={item.imageUrl}
                   alt={item.name}
                   fill
-                  sizes="(max-width: 1024px) 100vw, 50vw"
                   className="object-cover"
+                  sizes="(max-width: 1024px) 100vw, 50vw"
                   priority
                 />
               </div>
-            </FadeIn>
 
-            <div>
-              <FadeIn>
-                <p className="text-label mb-3">{category?.name || item.category}</p>
-                <h1 className="text-display-md text-ivory mb-4">{item.name}</h1>
-                <p className="text-gold text-2xl font-display mb-6">
-                  {formatPrice(item.price)}
-                </p>
-                <p className="text-ivory-muted leading-relaxed mb-8">
-                  {item.description}
-                </p>
-              </FadeIn>
+              <div>
+                <p className="text-label mb-2">{item.category}</p>
+                <h1 className="text-display-lg text-ivory mb-4">
+                  {item.name}
+                </h1>
+                <p className="text-body-lg mb-6">{item.description}</p>
 
-              <FadeIn delay={0.1}>
-                <div className="flex flex-wrap gap-3 mb-8">
-                  <span className="inline-flex items-center gap-1.5 text-xs text-ivory-dim bg-surface border border-border/50 px-3 py-1.5">
-                    <Clock size={12} /> {item.preparationTime} min prep
+                <div className="flex items-center gap-4 mb-6">
+                  <span className="text-display-md text-gold">
+                    {formatPrice(item.price)}
                   </span>
-                  {item.dietary.map((d) => (
-                    <span
-                      key={d}
-                      className="inline-flex items-center gap-1.5 text-xs text-success bg-success/10 border border-success/30 px-3 py-1.5"
-                    >
-                      <Leaf size={12} /> {d}
+                  {item.preparationTime && (
+                    <span className="flex items-center gap-1 text-ivory-dim text-sm">
+                      <Clock size={14} />
+                      {item.preparationTime} min
                     </span>
-                  ))}
-                  {item.allergens.map((a) => (
-                    <span
-                      key={a}
-                      className="inline-flex items-center gap-1.5 text-xs text-warning bg-warning/10 border border-warning/30 px-3 py-1.5"
-                    >
-                      <CircleAlert size={12} /> {a}
-                    </span>
-                  ))}
-                </div>
-              </FadeIn>
-
-              <FadeIn delay={0.2}>
-                <div className="bg-surface border border-border/50 p-6 mb-8">
-                  <h2 className="text-display text-sm text-ivory uppercase tracking-[0.2em] mb-4">
-                    Ingredients
-                  </h2>
-                  <div className="flex flex-wrap gap-2">
-                    {item.ingredients.map((ing) => (
-                      <span
-                        key={ing}
-                        className="text-sm text-ivory-dim bg-bg px-3 py-1.5 border border-border/30"
-                      >
-                        {ing}
-                      </span>
-                    ))}
-                  </div>
-                  {item.allergens.length > 0 && (
-                    <p className="text-xs text-ivory-dim mt-4">
-                      <Wheat size={12} className="inline mr-1" />
-                      Contains: {item.allergens.join(", ")}. Please inform our
-                      team of any dietary requirements.
-                    </p>
                   )}
                 </div>
-              </FadeIn>
 
-              <FadeIn delay={0.3}>
-                <div className="flex flex-col sm:flex-row gap-4">
+                {/* Dietary */}
+                <div className="flex flex-wrap gap-2 mb-6">
+                  {item.dietary.map((d: string) => (
+                    <span
+                      key={d}
+                      className="text-xs px-3 py-1 bg-surface-elevated border border-border-light text-ivory-dim"
+                    >
+                      {d}
+                    </span>
+                  ))}
+                  {item.dietary.length === 0 && item.ingredients?.length > 0 && (
+                    <span className="text-xs px-3 py-1 bg-surface-elevated border border-border-light text-ivory-dim">
+                      Standard
+                    </span>
+                  )}
+                </div>
+
+                {/* Allergens — surfaced from the database, not mock data */}
+                {item.allergens && item.allergens.length > 0 && (
+                  <div className="mb-6 p-3 bg-warning/10 border border-warning/30 text-warning text-sm flex items-start gap-2">
+                    <CircleAlert size={14} className="mt-0.5 shrink-0" />
+                    <span>
+                      Contains: {item.allergens.join(", ")}. Please inform our
+                      team of any allergies before ordering.
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex gap-3">
                   <Link
-                    href="/reserve"
-                    className="btn-primary text-sm text-center"
+                    href="/order"
+                    className={cn(
+                      "btn-primary inline-flex items-center",
+                      !item.isAvailable && "opacity-50 pointer-events-none"
+                    )}
                   >
-                    Reserve a Table <ArrowRight size={16} className="inline" />
-                  </Link>
-                  <Link
-                    href="/menu"
-                    className="btn-outline text-sm text-center"
-                  >
-                    Explore More Dishes
+                    {item.isAvailable ? "Add to Order" : "Currently Unavailable"}
                   </Link>
                 </div>
-              </FadeIn>
+              </div>
             </div>
-          </div>
 
-          {related.length > 0 && (
-            <section className="mt-24">
-              <FadeIn>
-                <h2 className="text-display-md text-ivory mb-8">
-                  More from {category?.name}
+            {/* Related */}
+            {related.length > 0 && (
+              <section className="mt-16">
+                <h2 className="text-display-md text-ivory mb-6">
+                  You might also enjoy
                 </h2>
-              </FadeIn>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {related.map((dish, i) => (
-                  <FadeIn key={dish.id} delay={i * 0.1}>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {related.map((r: any) => (
                     <Link
-                      href={`/menu/${dish.slug}`}
-                      className="group block bg-surface border border-border/50 hover:border-border-light transition-all duration-500 overflow-hidden"
+                      key={r.id}
+                      href={`/menu/${r.slug}`}
+                      className="group"
                     >
-                      <div className="img-zoom aspect-[4/3] overflow-hidden bg-bg relative">
+                      <div className="relative aspect-[4/3] overflow-hidden mb-3">
                         <Image
-                          src={dish.imageUrl}
-                          alt={dish.name}
+                          src={r.imageUrl}
+                          alt={r.name}
                           fill
+                          className="object-cover transition-transform duration-500 group-hover:scale-105"
                           sizes="(max-width: 768px) 100vw, 33vw"
-                          className="w-full h-full object-cover"
                         />
                       </div>
-                      <div className="p-5">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-ivory font-display">
-                            {dish.name}
-                          </h3>
-                          <span className="text-gold text-sm">
-                            {formatPrice(dish.price)}
-                          </span>
-                        </div>
-                      </div>
+                      <h3 className="text-ivory font-medium group-hover:text-gold transition-colors">
+                        {r.name}
+                      </h3>
+                      <p className="text-gold text-sm">{formatPrice(r.price)}</p>
                     </Link>
-                  </FadeIn>
-                ))}
-              </div>
-            </section>
-          )}
+                  ))}
+                </div>
+              </section>
+            )}
+          </FadeIn>
         </div>
       </main>
       <Footer />

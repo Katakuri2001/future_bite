@@ -406,6 +406,30 @@ export async function getAllDishes() {
   }));
 }
 
+export async function getDishBySlug(slug: string) {
+  const row = await getDB()
+    .prepare("SELECT d.*, c.name as category, c.slug as category_slug FROM dishes d JOIN categories c ON c.id = d.category_id WHERE d.slug = ?")
+    .bind(slug)
+    .first<any>();
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    description: row.description,
+    price: row.price,
+    category: row.category,
+    categorySlug: row.category_slug,
+    imageUrl: row.image_url,
+    ingredients: safeJson(row.ingredients),
+    allergens: safeJson(row.allergens),
+    dietary: safeJson(row.dietary),
+    isAvailable: row.is_available === 1,
+    isFeatured: row.is_featured === 1,
+    preparationTime: row.preparation_time,
+  };
+}
+
 export async function getDishById(id: string) {
   const row = await getDB()
     .prepare("SELECT d.*, c.name as category_name FROM dishes d LEFT JOIN categories c ON c.id = d.category_id WHERE d.id = ?")

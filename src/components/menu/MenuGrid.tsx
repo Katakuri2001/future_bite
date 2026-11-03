@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Search, SlidersHorizontal, Plus, Loader2, AlertCircle } from "lucide-react";
+import { Search, SlidersHorizontal, Plus, Loader2, AlertCircle, CircleAlert } from "lucide-react";
 import { cn, formatKyat } from "@/lib/utils";
 import { useCart } from "@/context/CartContext";
 
@@ -17,6 +17,7 @@ interface MenuItem {
   categorySlug: string;
   imageUrl: string;
   dietary: string[];
+  allergens: string[];
   isAvailable: boolean;
 }
 
@@ -187,6 +188,14 @@ export default function MenuGrid() {
               <p className="text-ivory-muted text-sm leading-relaxed mb-3 line-clamp-2 flex-1">
                 {item.description}
               </p>
+              {item.allergens && item.allergens.length > 0 && (
+                <div className="mb-3 flex items-center gap-1.5 text-[10px] text-warning">
+                  <CircleAlert size={11} className="shrink-0" />
+                  <span className="truncate">
+                    Contains: {item.allergens.join(", ")}
+                  </span>
+                </div>
+              )}
               <div className="flex flex-wrap gap-1.5 mb-4">
                 {(item.dietary || []).map((d) => (
                   <span
